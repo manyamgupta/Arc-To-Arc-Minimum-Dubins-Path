@@ -1,0 +1,142 @@
+from genericpath import isfile
+from xml.dom.pulldom import default_bufsize
+import numpy as np
+from numpy import pi,cos,sin
+import matplotlib.pyplot as plt
+import dubins
+import dubutils as du 
+import utils
+from types import SimpleNamespace
+
+def PathLS(arc1, arc2, al1, rho):
+    # Assumption: cenetr of the first arc (0,0)
+    c_x = arc2.c_x
+    c_y = arc2.c_y
+    r1 = arc1.arc_radius
+    r2 = arc2.arc_radius
+    lx = c_x-(r1+rho)*np.cos(al1)
+    ly = c_y-(r1+rho)*np.sin(al1)
+    
+    dist_o1c2 = np.sqrt(lx**2 + ly**2)
+    if np.abs((rho+r2)/(dist_o1c2)) > 1:
+        return np.nan, np.nan, [np.nan, np.nan]
+    psi1 = np.arctan2(ly, lx)
+    psi2 = np.arcsin((rho+r2)/dist_o1c2)
+    theta1 = al1-np.pi/2
+    
+    phi1 = np.mod(psi1+psi2-theta1, 2*pi)
+    
+    Ls = np.sqrt(lx**2 + ly**2 - (rho+r2)**2 )
+    lengthLS = Ls + rho*phi1
+    
+    return lengthLS, [rho*phi1, Ls, psi1, psi2, dist_o1c2]
+
+def PathRL(c_x,c_y, rho, targRadius):
+    
+    Lcc = np.sqrt(c_x*c_x + (c_y+rho)*(c_y+rho))
+
+    if Lcc>targRadius+3*rho or Lcc < targRadius-rho:
+        return [np.nan, np.nan], [np.nan, np.nan], [np.nan, np.nan]
+    
+    g = (4*rho*rho + Lcc*Lcc - (targRadius+rho)*(targRadius+rho))/(2*Lcc)
+    
+    psi1 = np.arctan2(c_y+rho, c_x)
+    psi2 = np.arccos( g/(2*rho))
+    psi3 = np.arccos((Lcc-g)/(targRadius+rho) )
+    
+    phi1a = np.mod(-psi1+psi2+pi/2, 2*pi)
+    phi2a = pi+psi2+psi3
+    
+    phi1b = np.mod(-psi1-psi2+pi/2, 2*pi)
+    phi2b = pi-psi2-psi3
+    
+    
+    thetaRLa = np.mod(-phi1a+phi2a, 2*pi)
+    alphaRLa = np.mod(thetaRLa+ pi/2, 2*pi)
+    distRLa = rho*(phi1a+phi2a)
+    
+    thetaRLb = np.mod(-phi1b+phi2b, 2*pi)
+    alphaRLb = np.mod(thetaRLb+ pi/2, 2*pi)
+    distRLb = rho*(phi1b+phi2b)
+    
+    alphaRL = [alphaRLb, alphaRLa]
+    distRL = [distRLb, distRLa]
+    segLengths = [[rho*phi1a, rho*phi2a],[rho*phi1b, rho*phi2b]]
+    return alphaRL, distRL, segLengths
+
+if __name__ == "__main__":
+    
+    LSL =0; LSR = 1; RSL = 2; RSR = 3; RLR = 4; LRL = 5;     
+    rho = 1    
+    pathfmt = SimpleNamespace(color='blue', linewidth=2, linestyle='-', marker='x')
+    arcfmt = SimpleNamespace(color='m', linewidth=1, linestyle='--', marker='x')
+    arrowfmt = SimpleNamespace(color='g', linewidth=1, linestyle='-', marker='x')
+    
+    arc1 = utils.Arc(0,0, 2.5, 0.01, 6.28)
+    arc2 = utils.Arc(7., 2.5, 2.5, 0.01, 6.28)
+    nd = 200
+    
+    r1 = arc1.arc_radius        
+    r2 = arc2.arc_radius  
+    pathNum = 1
+    alVsLen = np.zeros([nd,4])
+    alVec = utils.AngularLinSpace(arc1.angPos_lb, arc1.angPos_ub, nd)
+    distVec = np.ones(nd)*np.nan
+    for indx, al1 in enumerate(alVec):
+        
+        iniPos = np.array([r1*np.cos(al1), r1*np.sin(al1)])
+        iniHdng = al1-np.pi/2
+        # c2_trans = np.array([arc2.c_x, arc2.c_y])-iniPos
+        # c2_transRot = utils.RotateVec(c2_trans, -iniHdng)
+        # alphaRL, distRL, segLengths = PathRL(c2_transRot[0], c2_transRot[1], rho, r2)
+        pathLen, segLengths = PathLS(arc1, arc2, al1, rho)
+        
+        # if np.isfinite(alphaRL[pathNum]):
+        #     # row = [[alphaRL[pathNum], distRL[pathNum], segLengths[pathNum][0], segLengths[pathNum][1]]]
+        #     # alVsLen = np.append(alVsLen, row, axis=0)
+        #     alVSdist[indx,:] = [alphaRL[pathNum], distRL[pathNum], segLengths[pathNum][0], segLengths[pathNum][1]]
+        #     distVec[indx] = distRL[pathNum]
+        if np.isfinite(pathLen):            
+            # alVsLen[indx,:] = [al1, pathLen, segLengths[0], segLengths[1]]
+            distVec[indx] = pathLen
+            
+            # du.PlotDubPathSegments([iniPos[0], iniPos[1], iniHdng], 'LS', segLengths[0:2], rho, arcfmt)            
+            
+    minIndx = np.argmin(distVec)
+    minAl = alVec[minIndx]
+    
+    pathLen, segLengths = PathLS(arc1, arc2, minAl, rho)
+    print(f"{pathLen=}")
+    print(f"{segLengths=}")
+    
+    psi1 = segLengths[2]
+    psi2 = segLengths[3]
+    doc = segLengths[4]
+    
+    lx = arc2.c_x-(r1+rho)*np.cos(minAl)
+    ly = arc2.c_y-(r1+rho)*np.sin(minAl)
+    doc = np.sqrt(lx**2 + ly**2)
+    Ls = np.sqrt(doc**2-(rho+r2)**2)
+    Ls_p = (r1+rho)*(lx*np.sin(minAl)-ly*np.cos(minAl))/Ls
+    
+    Ls_prime = (r1+rho)*np.sin(minAl-psi1)/(np.cos(psi2))
+    psi1_p = (r1+rho)*np.cos(minAl-psi1)/doc
+    psi2_p = -(r1+rho)*(r2+rho)*np.sin(minAl-psi1)/(np.cos(psi2)*doc*doc)
+    phi1_p = psi1_p+psi2_p-1
+    
+    phi1_prime = ((r1+rho)/(doc*np.cos(psi2)))*np.cos(minAl-psi1+psi2)-1
+    
+    lenLS_prime = Ls_prime + rho*phi1_prime
+    print(f"{lenLS_prime=}")
+    
+    iniPos = np.array([r1*np.cos(minAl), r1*np.sin(minAl)])
+    iniHdng = minAl-np.pi/2
+
+    du.PlotDubPathSegments([iniPos[0], iniPos[1], iniHdng], 'LS', segLengths[0:2], rho, pathfmt)
+    utils.PlotArc(arc1, arcfmt)
+    utils.PlotArc(arc2, arcfmt)              
+    plt.axis('equal')
+    
+    plt.figure()
+    plt.plot(alVec, distVec)
+    plt.show()

@@ -18,7 +18,7 @@ class Arc:
     angPos_lb: float # angular position lower bound
     angPos_ub: float # angular position upper bound
     
-    
+
 def IntersectionLineSegments(p1,p2,p3,p4):
     # https://math.stackexchange.com/questions/3176543/intersection-point-of-2-lines-defined-by-2-points-each
     n = p2-p1

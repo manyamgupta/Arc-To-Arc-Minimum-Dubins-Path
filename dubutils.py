@@ -4,15 +4,15 @@ from logging import setLoggerClass
 import matplotlib.pyplot as plt
 from numpy import pi,cos,sin
 import numpy as np
-from shapely.ctypes_declarations import EXCEPTION_HANDLER_FUNCTYPE
-from shapely.geometry import LineString
-from shapely.geometry import Point
-from shapely.geometry import MultiPoint
-from shapely.geometry.polygon import Polygon
+# from shapely.ctypes_declarations import EXCEPTION_HANDLER_FUNCTYPE
+# from shapely.geometry import LineString
+# from shapely.geometry import Point
+# from shapely.geometry import MultiPoint
+# from shapely.geometry.polygon import Polygon
 from collections import namedtuple
 import utils
 import time
-import dubins
+# import dubins
 from types import SimpleNamespace
 
 deffmt = SimpleNamespace(color='blue', linewidth=2, linestyle='-', marker='x')
@@ -29,6 +29,7 @@ def PlotDubPathSegments(iniConf, pathMode, segLengths, rho, fmt=deffmt):
     if pathMode != 'None':
         for k in range(len(pathMode)):
             iniConf = PlotSegment(iniConf, segLengths[k], pathMode[k], rho, fmt)
+            plt.scatter(iniConf[0], iniConf[1],marker='x')
 
     return
 
@@ -353,13 +354,13 @@ def CheckDubPathFeas(startConf, pathType, segLengths, rho, listObs):
 
     return pathFeas
 
-def PlotDubPathSegments(iniConf, pathMode, segLengths, rho, fmt):
-    # segLengths is array of length of the arcs, not arc angles
-    startConf = iniConf
-    for k in range(len(pathMode)):
-        startConf = PlotSegment(startConf, segLengths[k], pathMode[k], rho, fmt)
+# def PlotDubPathSegments(iniConf, pathMode, segLengths, rho, fmt):
+#     # segLengths is array of length of the arcs, not arc angles
+#     startConf = iniConf
+#     for k in range(len(pathMode)):
+#         startConf = PlotSegment(startConf, segLengths[k], pathMode[k], rho, fmt)
 
-    return
+#     return
 
 def PlotSegment(startConf, segLength, segType, rho, fmt):
     # segLength the length of the arc, not arc angle

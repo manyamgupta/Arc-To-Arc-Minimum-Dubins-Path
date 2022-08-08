@@ -40,6 +40,15 @@ def RotateVec(vec, theta ):
     rotMat = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
     return np.matmul(rotMat, np.array(vec))
 
+def DistPtToLineSeg(pt, lineSeg):
+    # perpendicular distance from point to linesegment
+    lineSeg  =np.array(lineSeg)    
+    A = lineSeg[0]; B = lineSeg[1]
+    lenAB = np.linalg.norm(A-B)
+    triangleArea = abs((B[0]-A[0])*(A[1]-pt[1]) - (B[1]-A[1])*(A[0]-pt[0]))
+    
+    return triangleArea/lenAB
+    
 def CheckPtLiesInsideLineSeg(a,b,c):
 # check if point c lies inside line segment ab, assume abc are collinear
 

@@ -37,19 +37,26 @@ class Arc2ArcDubins:
         # self.arc2 = Arc(arc2_cntr[0], arc2_cntr[1], arc2_radius, arc2_bounds[0], arc2_bounds[1])
         self.arc1 = arc1
         self.arc2 = arc2        
-        self.MoveArc1ToOrig()
-        self.rho = rho
+        self.MoveArc1ToOrig() #This moves the arc1 and arc2 such that center of arc1 is at origin, and the
+        self.rho = rho #minimum turn radius of the vehicle
         
+        #length of the line connecting the centres of the two arcs
         self.len_c1c2 = np.linalg.norm(np.array([self.arc1.cntr_x-self.arc2.cntr_x, self.arc1.cntr_y-self.arc2.cntr_y]))
+        
+        #angle made the line c1c2 with x-axis (slope)
         self.psi_c1c2 = np.arctan2(self.arc2.cntr_y-self.arc1.cntr_y, self.arc2.cntr_x-self.arc1.cntr_x)
+        
         
         arc1_ref = self.ReflectXaxis(self.arc1)
         arc2_ref = self.ReflectXaxis(self.arc2)
         
         self.arc2_ref_trans = Arc(0,0, self.arc2.arc_radius, arc2_ref.angPos_lb, arc2_ref.angPos_ub)
         self.arc1_ref_trans = Arc(arc1_ref.cntr_x-arc2_ref.cntr_x, arc1_ref.cntr_y-arc2_ref.cntr_y, self.arc1.arc_radius, arc1_ref.angPos_lb, arc1_ref.angPos_ub)
+        
+        # empty lists for lengths and candidate paths, these are populated when A2AMinDubins() is called
         self.lengthsVec = []
         self.candPathsList = []
+        
         self.arc1_bound_config_lb = (self.arc1.cntr_x+self.arc1.arc_radius*np.cos(arc1.angPos_lb), self.arc1.cntr_y+self.arc1.arc_radius*np.sin(arc1.angPos_lb), arc1.angPos_lb-np.pi/2)
         self.arc1_bound_config_ub = (self.arc1.cntr_x+self.arc1.arc_radius*np.cos(arc1.angPos_ub), self.arc1.cntr_y+self.arc1.arc_radius*np.sin(arc1.angPos_ub), arc1.angPos_ub-np.pi/2)
 
@@ -59,7 +66,7 @@ class Arc2ArcDubins:
         return
     
     def MoveArc1ToOrig(self):
-        
+        #This moves the arc1 and arc2 such that center of arc1 is at origin, and the
         self.arc2.cntr_x = self.arc2.cntr_x-self.arc1.cntr_x
         self.arc1.cntr_x = 0        
         self.arc2.cntr_y = self.arc2.cntr_y-self.arc1.cntr_y
@@ -68,7 +75,7 @@ class Arc2ArcDubins:
         return
     
     def RotateTransArc(self, config, arc):
-        
+        # Rotates and translated the arc such that the config aligns with [0,0,0]
         cntr2_trans = (arc.cntr_x-config[0], arc.cntr_y-config[1])
         cntr2_trans_rot = utils.RotateVec2(cntr2_trans, -config[2])
         # arc_trans_rot = Arc(cntr2_trans_rot[0], cntr2_trans_rot[1], arc.arc_radius, arc.angPos_lb-config[2], arc.angPos_ub-config[2])
@@ -76,6 +83,7 @@ class Arc2ArcDubins:
         return Arc(cntr2_trans_rot[0], cntr2_trans_rot[1], arc.arc_radius, arc.angPos_lb-config[2], arc.angPos_ub-config[2])
     
     def ReflectXaxis(self, arc):
+        # Reflection of an arc across x-axis
         arc_ref = Arc(arc.cntr_x, -arc.cntr_y, arc.arc_radius, np.mod(-arc.angPos_ub, 2*np.pi), np.mod(-arc.angPos_lb, 2*np.pi))
         
         return arc_ref
@@ -393,6 +401,8 @@ class Arc2ArcDubins:
         
     
     def PathL_A2A(self):
+        # path with single arc from arc1 to arc2
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
         
         if self.len_c1c2 > self.arc1.arc_radius+self.arc2.arc_radius+2*self.rho:
             return (None, None), None
@@ -406,6 +416,8 @@ class Arc2ArcDubins:
             return (None, None), None
     
     def PathS_A2A(self):
+        # path with one straight line
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
         
         al1 = np.pi/2+self.psi_c1c2+ np.arcsin( (self.arc2.arc_radius- self.arc1.arc_radius)/self.len_c1c2 )
         len_S = np.sqrt(self.len_c1c2**2 -(self.arc2.arc_radius- self.arc1.arc_radius)**2 )
@@ -415,6 +427,11 @@ class Arc2ArcDubins:
             return (None, None), None
             
     def PlotA2APath(self, alphas, segLengths, pathType, arc1=None, arc2=None):
+        # Plots a dubins path from arc1 to arc2
+        # alphas are the start and end positions on the arcs are
+        # seglengths are the length of each segment of the Dubins path
+        # pathType is the dubins mode
+        # is arc1 and arc2 are not given, the arcs from the main Arc2ArcDubins object are used
         if arc1 is None:
             arc1 = self.arc1
             arc2 = self.arc2
@@ -441,6 +458,9 @@ class Arc2ArcDubins:
         return
     
     def PlotAllPaths(self, candPathsList):
+        # Plots the list of paths from candPathsList
+        # Prints the parameters for each path
+        
         pathfmt = SimpleNamespace(color='blue', linewidth=2, linestyle='-', marker='x')
         arcfmt = SimpleNamespace(color='m', linewidth=1, linestyle='--', marker='x')
         arrowfmt = SimpleNamespace(color='g', linewidth=1, linestyle='-', marker='x')
@@ -450,7 +470,8 @@ class Arc2ArcDubins:
             
             iniPt = np.array([self.arc1.cntr_x+self.arc1.arc_radius*np.cos(al1), self.arc1.cntr_y+self.arc1.arc_radius*np.sin(al1)])
             iniHdng = al1-np.pi/2
-            iniConf_min = np.array([iniPt[0], iniPt[1], iniHdng])                           
+            iniConf_min = np.array([iniPt[0], iniPt[1], iniHdng])  
+            plt.figure()                         
             du.PlotDubPathSegments(iniConf_min, candPath.pathType, candPath.segLengths, self.rho, pathfmt)
             
             utils.PlotArc(self.arc1, arcfmt)
@@ -462,11 +483,11 @@ class Arc2ArcDubins:
             utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
             utils.PlotLineSeg([self.arc1.cntr_x, self.arc1.cntr_y], [self.arc2.cntr_x, self.arc2.cntr_y], arrowfmt)      
             plt.axis('equal')
-            plt.show()
+        plt.show()
         return
     def A2AMinDubins(self):
-        # lengthsVec = []
-        # candPathsList = []
+        # Computes the list of candidate paths for minimum arc to arc dubins paths        
+        # returns the length of the minimum path, minimum path, and candidate paths
         
         ######################## One Segment Paths ########################
         # Path S
@@ -570,6 +591,7 @@ class Arc2ArcDubins:
         return self.lengthsVec[minInd], self.candPathsList[minInd], self.candPathsList
     
     def TwoBoundaryPaths(self):
+        # This computed the four dubins paths from the boudnary limits of the first arc to boundary limits of the second arc
         for iniConf in [self.arc1_bound_config_lb, self.arc1_bound_config_ub]:
             for finConf in [self.arc2_bound_config_lb, self.arc2_bound_config_ub]:
                 path_bnd2bnd = dubins.shortest_path(iniConf, finConf, self.rho)
@@ -582,6 +604,7 @@ class Arc2ArcDubins:
     def OneBoundaryPaths(self):
 
         ## lower bound and upper bound of arc1 to any config on arc2: shortest path
+        
         for angPos_bnd in [self.arc1.angPos_lb, self.arc1.angPos_ub]:            
             arc1_bound_config = (self.arc1.cntr_x+self.arc1.arc_radius*np.cos(angPos_bnd), self.arc1.cntr_y+self.arc1.arc_radius*np.sin(angPos_bnd), angPos_bnd-np.pi/2)
             arc2_trans = self.RotateTransArc(arc1_bound_config, self.arc2)
@@ -592,16 +615,14 @@ class Arc2ArcDubins:
                 self.candPathsList.append(cp1)
                 self.lengthsVec.append(sum(minPath_p2a.segLengths))
         
+        ## shortest path from any point on the first arc to the boundary limits of the second arc
+        ## this is done by translating and reflecting, and uses point to arc function P2AMinDubins()
         for angPos_bnd in [self.arc2.angPos_lb, self.arc2.angPos_ub]:
             arc2_bound_config = (self.arc2.cntr_x+self.arc2.arc_radius*np.cos(angPos_bnd), self.arc2.cntr_y+self.arc2.arc_radius*np.sin(angPos_bnd), angPos_bnd+np.pi/2)
             arc1_trans = self.RotateTransArc(arc2_bound_config, self.arc1)
             arc1_trans_ref = self.ReflectXaxis(arc1_trans)
             p2a_arc2bnd2arc1 = dubP2A.P2ArcDubins((arc1_trans_ref.cntr_x, arc1_trans_ref.cntr_y), arc1_trans_ref.arc_radius, (arc1_trans_ref.angPos_lb, arc1_trans_ref.angPos_ub),  self.rho)
-            minPath_p2a, _ = p2a_arc2bnd2arc1.P2AMinDubins()
-            # print('min path and pos on arc1: ', minPath_p2a.angPos)
-            # angPos_arc1 = -minPath_p2a.angPos+angPos_bnd+np.pi/2
-            # pathMode = minPath_p2a.pathType[::-1]
-            # segLengths = minPath_p2a.segLengths[::-1]
+            minPath_p2a, _ = p2a_arc2bnd2arc1.P2AMinDubins()  
             cp1 = CandidatePath(minPath_p2a.pathType[::-1], -minPath_p2a.angPos+angPos_bnd+np.pi/2, angPos_bnd, minPath_p2a.segLengths[::-1])
             self.candPathsList.append(cp1)
             self.lengthsVec.append(sum(minPath_p2a.segLengths))

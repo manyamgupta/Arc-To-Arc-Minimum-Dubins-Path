@@ -1,6 +1,6 @@
 # Author: Satyanarayana Gupta Manyam
 
-from logging import setLoggerClass
+# from logging import setLoggerClass
 import matplotlib.pyplot as plt
 from numpy import pi,cos,sin
 import numpy as np
@@ -9,7 +9,7 @@ import numpy as np
 # from shapely.geometry import Point
 # from shapely.geometry import MultiPoint
 # from shapely.geometry.polygon import Polygon
-from collections import namedtuple
+# from collections import namedtuple
 import utils
 import time
 # import dubins
@@ -29,6 +29,7 @@ def PlotDubPathSegments(iniConf, pathMode, segLengths, rho, fmt=deffmt):
     if pathMode != 'None':
         for k in range(len(pathMode)):
             iniConf = PlotSegment(iniConf, segLengths[k], pathMode[k], rho, fmt)
+            # print('iniConf: ',iniConf)
             plt.scatter(iniConf[0], iniConf[1],marker='x')
 
     return
@@ -268,7 +269,18 @@ def CheckArcIntersectsLine(cntr, rho, angPosEnds, lineEnds):
     
     return intsFlag
 
+def DubPathStr2Num(pathType):
+    
+    LSL =0; LSR = 1; RSL = 2; RSR = 3; RLR = 4; LRL = 5; 
+    pathTypesList = ['LSL', 'LSR', 'RSL', 'RSR', 'RLR', 'LRL']
+    
+    return pathTypesList.index(pathType)
 
+def DubPathTypeNum2Str(pathTypeNum):
+    
+    pathTypesList = ['LSL', 'LSR', 'RSL', 'RSR', 'RLR', 'LRL']
+    
+    return pathTypesList[pathTypeNum]
 
 def DubPathTypeString(pathType):
 
@@ -403,7 +415,7 @@ def RotSenseSeq(pathMode):
             raise Exception('Error: Incorrect turn, each letter can be L or R or S')
 
     return np.array(rotSeq)
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
     plotformat = namedtuple("plotformat","color linewidth linestyle marker")
     rho = 1

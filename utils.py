@@ -1,23 +1,73 @@
 # Author: Satyanarayana Gupta Manyam
-from turtle import end_fill
+# from turtle import end_fill
 from numpy import pi,cos,sin
 import numpy as np
 import matplotlib.pyplot as plt
 from types import SimpleNamespace
-from collections import namedtuple
+# from collections import namedtuple
 
 defaultFmt = SimpleNamespace(color='blue', linewidth=2, linestyle='-', marker='x')
 from dataclasses import dataclass
 
-
+    
 @dataclass
 class Arc:
-    c_x: float
-    c_y: float
+    cntr_x: float
+    cntr_y: float
     arc_radius: float
     angPos_lb: float # angular position lower bound
     angPos_ub: float # angular position upper bound
+
+def DubPathReflection(pathMode):
+    pathRef = ''
+    for p in pathMode:
+        if p == 'L':
+            pathRef += 'R'
+        elif p == 'R':
+            pathRef += 'L'
+        elif p == 'S':
+            pathRef += 'S'
+            
+    return pathRef
+def CheckFeasibility(arc1, arc2, al1, rho, segLengths, pathMode):
     
+    if InInt(arc1.angPos_lb, arc1.angPos_ub, al1):
+        iniConf = (arc1.cntr_x+arc1.arc_radius*np.cos(al1), arc1.cntr_y+arc1.arc_radius*np.sin(al1), al1-np.pi/2)
+        
+        for k in range(len(pathMode)):
+            iniConf = MoveAlongSegment(iniConf, segLengths[k], pathMode[k], rho)
+            # print('iniConf: ', iniConf)
+        al2 = iniConf[2]+np.pi/2
+        if np.abs(np.sqrt((iniConf[0]-arc2.cntr_x)**2+(iniConf[1]-arc2.cntr_y)**2)-arc2.arc_radius) <1e-4 and InInt(arc2.angPos_lb, arc2.angPos_ub, al2):
+            return True
+
+    return False
+
+
+def MoveAlongSegment(startConf, segLength, segType, rho):
+    
+    t1 = startConf[2]
+    if segType == 'S':
+        pt2 = (startConf[0] + segLength*np.cos(t1), startConf[1] + segLength*np.sin(t1))
+        finalConf = (pt2[0], pt2[1], t1)
+    elif segType == 'L' or segType == 'R':
+
+        rotSense = 1 if segType =='L' else -1
+        center = (startConf[0] + rho*np.cos(t1+rotSense*pi/2), startConf[1] + rho*np.sin(t1+rotSense*pi/2))
+
+        t2 = np.mod(t1  + rotSense*segLength/rho, 2*pi)
+        al_final = t2 -rotSense*pi/2 
+
+        tc_x = center[0]+rho*np.cos(al_final)
+        tc_y = center[1]+rho*np.sin(al_final)
+        
+        
+        finalConf = (tc_x, tc_y, t2)
+    else:
+        raise Exception('Error: Ineligible turn, each letter can be L or R or S. Let me let you go')
+
+    
+    return finalConf
 
 def IntersectionLineSegments(p1,p2,p3,p4):
     # https://math.stackexchange.com/questions/3176543/intersection-point-of-2-lines-defined-by-2-points-each
@@ -39,6 +89,12 @@ def RotateVec(vec, theta ):
     # rotates the vec in ccw direction for an angle of theta
     rotMat = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
     return np.matmul(rotMat, np.array(vec))
+
+def RotateVec2(vec, theta ):
+    # rotates the vec in ccw direction for an angle of theta
+    # returns tuple
+    return (np.cos(theta)*vec[0]-np.sin(theta)*vec[1], np.sin(theta)*vec[0]+np.cos(theta)*vec[1])
+    
 
 def DistPtToLineSeg(pt, lineSeg):
     # perpendicular distance from point to linesegment
@@ -98,9 +154,9 @@ def PlotArc(arc,fmt):
     
     alVec = AngularLinSpace(theta_l,theta_u,100)
 
-    tc_x = arc.c_x+r*cos(alVec)
-    tc_y = arc.c_y+r*sin(alVec)
-    plt.scatter(arc.c_x, arc.c_y, marker='x', color=fmt.color)
+    tc_x = arc.cntr_x+r*cos(alVec)
+    tc_y = arc.cntr_y+r*sin(alVec)
+    plt.scatter(arc.cntr_x, arc.cntr_y, marker='x', color=fmt.color)
     plt.plot(tc_x, tc_y, fmt.color, linewidth=fmt.linewidth, linestyle=fmt.linestyle) 
     return
 

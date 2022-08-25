@@ -1,325 +1,833 @@
+from cmath import isfinite
 import numpy as np
 from numpy import pi,cos,sin
 import matplotlib.pyplot as plt
 import dubins
 import dubutils as du 
+import DubinsP2Arc as dubP2A
 import utils
 from types import SimpleNamespace
+from dataclasses import dataclass
+from timeit import default_timer as timer
 
-def LocalMinLS(arc1, arc2, rho):
-    # Local minimum of LS path from arc1 to arc2    
-    # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
-    
-    c_x = arc2.c_x
-    c_y = arc2.c_y
-    r1 = arc2.arc_radius        
-    r2 = arc2.arc_radius    
-    
-    dc1c2 = np.sqrt( c_x*c_x + c_y*c_y  )
-    
-    psi1 = np.arctan2(c_y,c_x)
-    psi2 = np.arcsin(r2/dc1c2 )
-    psi3 = np.arcsin(rho/(r1+rho) )
+@dataclass
+class Arc:
+    cntr_x: float
+    cntr_y: float
+    arc_radius: float
+    # arc goes from lb to ub in ccw direction
+    angPos_lb: float # angular position lower bound
+    angPos_ub: float # angular position upper bound
 
-    al1_min = psi1+psi2+psi3
-    al2_min = psi1+psi2+np.pi/2
+@dataclass
+class CandidatePath:
+    pathType: str 
+    angPos_arc1: float # angular position at first arc
+    angPos_arc2: float # angular position at second arc
+    segLengths: tuple
     
-    if utils.InInt(arc1.angPos_lb, arc1.angPos_ub, al1_min) and utils.InInt(arc2.angPos_lb, arc2.angPos_ub, al2_min):
-        phi1 = np.mod(np.pi/2-psi3, 2*np.pi)
-        Ls = dc1c2*np.cos(psi2)-(r1+rho)*np.cos(psi3)
-    else:
-        return [np.nan, np.nan], [np.nan, np.nan]
-    
-    return [al1_min, al2_min], [rho*phi1, Ls]
+class Arc2ArcDubins:
 
-def LocalMinRS(arc1, arc2, rho):
-    # Local minimum of RS path from arc1 to arc2    
-    # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
-    
-    c_x = arc2.c_x
-    c_y = arc2.c_y
-    r1 = arc2.arc_radius        
-    r2 = arc2.arc_radius    
-    
-    dc1c2 = np.sqrt( c_x*c_x + c_y*c_y  )
-    
-    psi1 = np.arctan2(c_y,c_x)
-    psi2 = np.arcsin(r2/dc1c2 )
-    psi3 = np.arcsin(rho/(r1-rho) )
+    # def __init__(self, arc1_cntr, arc1_radius, arc1_bounds, arc2_cntr, arc2_radius, arc2_bounds, rho):     
+    def __init__(self, arc1, arc2, rho):     
+        
+        # Assumption: Arc1 center is (0,0)
+        
+        # self.arc1 = Arc(arc1_cntr[0], arc1_cntr[1], arc1_radius, arc1_bounds[0], arc1_bounds[1])
+        # self.arc2 = Arc(arc2_cntr[0], arc2_cntr[1], arc2_radius, arc2_bounds[0], arc2_bounds[1])
+        self.arc1 = arc1
+        self.arc2 = arc2        
+        self.MoveArc1ToOrig()
+        self.rho = rho
+        
+        self.len_c1c2 = np.linalg.norm(np.array([self.arc1.cntr_x-self.arc2.cntr_x, self.arc1.cntr_y-self.arc2.cntr_y]))
+        self.psi_c1c2 = np.arctan2(self.arc2.cntr_y-self.arc1.cntr_y, self.arc2.cntr_x-self.arc1.cntr_x)
+        
+        arc1_ref = self.ReflectXaxis(self.arc1)
+        arc2_ref = self.ReflectXaxis(self.arc2)
+        
+        self.arc2_ref_trans = Arc(0,0, self.arc2.arc_radius, arc2_ref.angPos_lb, arc2_ref.angPos_ub)
+        self.arc1_ref_trans = Arc(arc1_ref.cntr_x-arc2_ref.cntr_x, arc1_ref.cntr_y-arc2_ref.cntr_y, self.arc1.arc_radius, arc1_ref.angPos_lb, arc1_ref.angPos_ub)
+        self.lengthsVec = []
+        self.candPathsList = []
+        self.arc1_bound_config_lb = (self.arc1.cntr_x+self.arc1.arc_radius*np.cos(arc1.angPos_lb), self.arc1.cntr_y+self.arc1.arc_radius*np.sin(arc1.angPos_lb), arc1.angPos_lb-np.pi/2)
+        self.arc1_bound_config_ub = (self.arc1.cntr_x+self.arc1.arc_radius*np.cos(arc1.angPos_ub), self.arc1.cntr_y+self.arc1.arc_radius*np.sin(arc1.angPos_ub), arc1.angPos_ub-np.pi/2)
 
-    al1_min = psi1+psi2-psi3
-    al2_min = psi1+psi2+np.pi/2
+        self.arc2_bound_config_lb = (self.arc2.cntr_x+self.arc2.arc_radius*np.cos(arc2.angPos_lb), self.arc2.cntr_y+self.arc2.arc_radius*np.sin(arc2.angPos_lb), arc2.angPos_lb-np.pi/2)
+        self.arc2_bound_config_ub = (self.arc2.cntr_x+self.arc2.arc_radius*np.cos(arc2.angPos_ub), self.arc2.cntr_y+self.arc2.arc_radius*np.sin(arc2.angPos_ub), arc2.angPos_ub-np.pi/2)
+        
+        return
     
-    if utils.InInt(arc1.angPos_lb, arc1.angPos_ub, al1_min) and utils.InInt(arc2.angPos_lb, arc2.angPos_ub, al2_min):
-        phi1 = np.mod(3*np.pi/2-psi3, 2*np.pi)
-        Ls = dc1c2*np.cos(psi2)-(r1-rho)*np.cos(psi3)
-    else:
-        return [np.nan, np.nan], [np.nan, np.nan]
+    def MoveArc1ToOrig(self):
+        
+        self.arc2.cntr_x = self.arc2.cntr_x-self.arc1.cntr_x
+        self.arc1.cntr_x = 0        
+        self.arc2.cntr_y = self.arc2.cntr_y-self.arc1.cntr_y
+        self.arc1.cntr_y = 0
+        
+        return
     
-    return [al1_min, al2_min], [rho*phi1, Ls]
+    def RotateTransArc(self, config, arc):
+        
+        cntr2_trans = (arc.cntr_x-config[0], arc.cntr_y-config[1])
+        cntr2_trans_rot = utils.RotateVec2(cntr2_trans, -config[2])
+        # arc_trans_rot = Arc(cntr2_trans_rot[0], cntr2_trans_rot[1], arc.arc_radius, arc.angPos_lb-config[2], arc.angPos_ub-config[2])
+        
+        return Arc(cntr2_trans_rot[0], cntr2_trans_rot[1], arc.arc_radius, arc.angPos_lb-config[2], arc.angPos_ub-config[2])
+    
+    def ReflectXaxis(self, arc):
+        arc_ref = Arc(arc.cntr_x, -arc.cntr_y, arc.arc_radius, np.mod(-arc.angPos_ub, 2*np.pi), np.mod(-arc.angPos_lb, 2*np.pi))
+        
+        return arc_ref
+    def LocalMinLS(self, arc1=None, arc2=None):
+        # Local minimum of LS path from arc1 to arc2    
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
+        if arc1 is None:
+            arc1 = self.arc1        
+            arc2 = self.arc2
+            psi = self.psi_c1c2
+        else:
+            psi = np.arctan2(arc2.cntr_y-arc1.cntr_y, arc2.cntr_x-arc1.cntr_x)
+                
+        r1 = arc1.arc_radius
+        r2 = arc2.arc_radius
+        d = self.len_c1c2        
+        rho = self.rho
+        
+        coeffs = [2*rho*d, d**2-r1**2+2*r2*rho-2*r1*rho, 2*r2*d, r2**2]
+        roots = np.roots(coeffs)
 
-def LocalMinSL(arc1, arc2, rho):
-    # Local minimum of SL path from arc1 to arc2    
-    # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
+        al1 = None
+        al2 = None
+        segLengths = (None, None)
+        lengthLS = 100000000
+        for eta in roots:   
+            if np.imag(eta)==0 and np.abs(eta) <= 1:   
+                
+                eta_real = np.real(eta)
+                al1_min = np.arccos((rho*eta_real**2 + d*eta_real + r2)/(r1*eta_real+rho*eta_real))+psi
+                al2_min = np.arccos(eta_real)+psi
+                phi = np.mod(al2_min-al1_min, 2*np.pi)
+                len_S = d*np.sin(al1_min+phi-psi)-(r1+rho)*np.sin(phi)            
+                # if utils.InInt(arc1.angPos_lb, arc1.angPos_ub, al1_min) and utils.InInt(arc2.angPos_lb, arc2.angPos_ub, al2_min) and len_S>=0:                
+                if utils.CheckFeasibility(arc1, arc2, al1_min, rho, (rho*phi, len_S), 'LS') and len_S>=0:
+                    if rho*phi+len_S < lengthLS:
+                        al1 = al1_min
+                        al2 = al2_min
+                        segLengths = (rho*(phi), len_S)
+                        lengthLS = rho*phi+len_S
+                    
+        return (al1, al2), segLengths
+    def LocalMinSL(self):
+        # Local minimum of SL path from arc1 to arc2    
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
+        
+        alphas, segLengths = self.LocalMinLS(self.arc2_ref_trans, self.arc1_ref_trans)
+        
+        if alphas[0]:
+            alphsMinSL = [np.mod(-alphas[1], 2*np.pi),np.mod(-alphas[0], 2*np.pi)]
+        else:
+            return [None, None], [None, None]
+        
+        return alphsMinSL, segLengths[::-1]
     
-    c_x = arc2.c_x
-    c_y = arc2.c_y
-    r1 = arc2.arc_radius        
-    r2 = arc2.arc_radius    
-    
-    dc1c2 = np.sqrt( c_x*c_x + c_y*c_y  )
-    
-    psi1 = np.arctan2(c_y,c_x)
-    psi2 = np.arcsin(r1/dc1c2 )
-    psi3 = np.arcsin(rho/(r2+rho) )
+    def LocalMinRS(self, arc1=None, arc2=None):
+        # Local minimum of RS path from arc1 to arc2    
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
 
-    al1_min = np.pi/2+psi1-psi2
-    al2_min = np.pi+psi1-psi2-psi3
-    
-    if utils.InInt(arc1.angPos_lb, arc1.angPos_ub, al1_min) and utils.InInt(arc2.angPos_lb, arc2.angPos_ub, al2_min):
-        phi2 = np.mod(np.pi/2-psi3, 2*np.pi)
-        Ls = dc1c2*np.cos(psi2)-(r2+rho)*np.cos(psi3)
-    else:
-        return [np.nan, np.nan], [np.nan, np.nan]
-    
-    return [al1_min, al2_min], [Ls, rho*phi2]
+        if arc1 is None:
+            arc1 = self.arc1        
+            arc2 = self.arc2
+            psi = self.psi_c1c2
+        else:
+            psi = np.arctan2(arc2.cntr_y-arc1.cntr_y, arc2.cntr_x-arc1.cntr_x)
+                
+        r1 = arc1.arc_radius
+        r2 = arc2.arc_radius
+        d = self.len_c1c2        
+        rho = self.rho
+        
+        coeffs = [2*rho*d, -d**2+r1**2+2*r2*rho-2*r1*rho, -2*r2*d, -r2**2]
 
-def LocalMinSR(arc1, arc2, rho):
-    # Local minimum of SR path from arc1 to arc2    
-    # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
-    
-    c_x = arc2.c_x
-    c_y = arc2.c_y
-    r1 = arc2.arc_radius        
-    r2 = arc2.arc_radius    
-    
-    dc1c2 = np.sqrt( c_x*c_x + c_y*c_y  )
-    
-    psi1 = np.arctan2(c_y,c_x)
-    psi2 = np.arcsin(r1/dc1c2 )
-    psi3 = np.arcsin(rho/(r2-rho) )
+        roots = np.roots(coeffs)
 
-    al1_min = np.pi/2+psi1-psi2
-    al2_min = np.pi+psi1-psi2+psi3
-    
-    if utils.InInt(arc1.angPos_lb, arc1.angPos_ub, al1_min) and utils.InInt(arc2.angPos_lb, arc2.angPos_ub, al2_min):
-        phi2 = np.mod(3*np.pi/2-psi3, 2*np.pi)
-        Ls = dc1c2*np.cos(psi2)-(r2-rho)*np.cos(psi3)
-    else:
-        return [np.nan, np.nan], [np.nan, np.nan]
-    
-    return [al1_min, al2_min], [Ls, rho*phi2]
+        al1 = None
+        al2 = None
+        segLengths = (None, None)
+        lengthLS = 100000000
+        for eta in roots:   
+            if np.imag(eta)==0 and np.abs(eta) <= 1:   
+                
+                eta_real = np.real(eta)
+                al1_min = -np.arccos((-rho*eta_real**2 + d*eta_real + r2)/(r1*eta_real-rho*eta_real))+psi
+                al2_min = np.arccos(eta_real)+psi
+                phi = np.mod(al1_min-al2_min, 2*np.pi)
+                len_S = d*np.sin(al1_min-phi-psi)+(r1-rho)*np.sin(phi)            
+                # if utils.InInt(arc1.angPos_lb, arc1.angPos_ub, al1_min) and utils.InInt(arc2.angPos_lb, arc2.angPos_ub, al2_min) and len_S>=0:
+                if utils.CheckFeasibility(arc1, arc2, al1_min, rho, (rho*phi, len_S), 'RS') and len_S>=0:
+                
+                    if rho*phi+len_S < lengthLS:
+                        al1 = al1_min
+                        al2 = al2_min
+                        segLengths = (rho*(phi), len_S)
+                        lengthLS = rho*phi+len_S
+                    
+        return (al1, al2), segLengths
 
-def LocalMinLR(arc1, arc2, rho):
-    # Local minimum of LR path from arc1 to arc2    
-    # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
-    
-    c_x = arc2.c_x
-    c_y = arc2.c_y
-    r1 = arc1.arc_radius        
-    r2 = arc2.arc_radius    
-    
-    dc1c2 = np.sqrt( c_x**2 + c_y**2 )
-    
-    if r1+rho >= dc1c2 + 3*rho-r2 or dc1c2 >= r1+4*rho-r2 or 2*rho-r2>= r1+ dc1c2:
-        return [np.nan, np.nan], [np.nan, np.nan]
-    psi1 = np.arctan2(c_y,c_x)
-    cos_psi2 = ((r1+rho)**2+dc1c2**2-(3*rho-r2)**2)/(2*dc1c2*(r1+rho))
-    psi2 = np.arccos(cos_psi2)
-    
-    al1_min = psi1+psi2
-    cos_phi1 = ((r1+rho)**2+(3*rho-r2)**2-dc1c2**2)/(2*(r1+rho)*(3*rho-r2))
-    phi1 = np.arccos(cos_phi1)
-    al2_min = psi1+psi2+phi1-np.pi
-    
-    if utils.InInt(arc1.angPos_lb, arc1.angPos_ub, al1_min) and utils.InInt(arc2.angPos_lb, arc2.angPos_ub, al2_min):
-        phi2 = np.pi
-    else:
-        return [np.nan, np.nan], [np.nan, np.nan]
-    
-    return [al1_min, al2_min], [rho*phi1, rho*phi2]
 
-def LocalMinRL(arc1, arc2, rho):
-    # Local minimum of RL path from arc1 to arc2    
-    # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
-    
-    c_x = arc2.c_x
-    c_y = arc2.c_y
-    r1 = arc1.arc_radius        
-    r2 = arc2.arc_radius    
-    
-    dc1c2 = np.sqrt( c_x**2 + c_y**2 )
-    
-    A = r1-rho
-    B = dc1c2
-    C = 3*rho+r2
-    
-    if r1+A >= B+C or B >= A+C or C>= A+B:
-        return [np.nan, np.nan], [np.nan, np.nan]
-    psi1 = np.arctan2(c_y,c_x)
-    cos_psi2 = (A**2+B**2-C**2)/(2*A*B)
-    psi2 = np.arccos(cos_psi2)
-    
-    al1_min = psi1+psi2
-    cos_piminusphi1 = (A**2+C**2-B**2)/(2*A*C)
-    phi1 = np.pi-np.arccos(cos_piminusphi1)
-    al2_min = psi1+psi2-phi1+np.pi
-    
-    if utils.InInt(arc1.angPos_lb, arc1.angPos_ub, al1_min) and utils.InInt(arc2.angPos_lb, arc2.angPos_ub, al2_min):
-        phi2 = np.pi
-    else:
-        return [np.nan, np.nan], [np.nan, np.nan]
-    
-    return [al1_min, al2_min], [rho*phi1, rho*phi2]
+    def LocalMinSR(self):
+        # Local minimum of SR path from arc1 to arc2    
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
 
+        alphas, segLengths = self.LocalMinRS(self.arc2_ref_trans, self.arc1_ref_trans)
+        if alphas[0]:
+            alphsMinSR = [np.mod(-alphas[1], 2*np.pi),np.mod(-alphas[0], 2*np.pi)]
+        else:
+            return [None, None], [None, None]
+        
+        return alphsMinSR, segLengths[::-1]
+
+    def LocalMinLR(self, arc1=None, arc2=None):
+        # Local minimum of LR path from arc1 to arc2    
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
+
+        if arc1 is None:
+            arc1 = self.arc1        
+            arc2 = self.arc2
+            psi = self.psi_c1c2
+        else:
+            psi = np.arctan2(arc2.cntr_y-arc1.cntr_y, arc2.cntr_x-arc1.cntr_x)
+                
+        r1 = arc1.arc_radius
+        r2 = arc2.arc_radius
+        d = self.len_c1c2        
+        rho = self.rho
+        
+        c1 = 16*rho**3*d
+        gamma = r1**2-r2**2+2*rho*(r1+r2)-d**2
+        c2 = 12*rho**2*d**2 - 8*gamma*rho**2 - 16*rho**2*r2**2 +32*rho**3*r2
+        c3 = -8*gamma*rho*d-16*rho*r2**2*d+32*rho**2*r2*d
+        c4 = gamma**2 - 4*d**2*r2**2 + 8*rho*r2*d**2
+        coeffs = [c1, c2, c3, c4]
+
+        roots = np.roots(coeffs)
+
+        al1 = None
+        al2 = None
+        segLengths = (None, None)
+        lengthLR = 100000000
+        for eta in roots:   
+            if np.imag(eta)==0 and np.abs(eta) <= 1:   
+                
+                for pm in (+1, -1):
+                    eta_real = np.real(eta)
+                    al1_min = np.arcsin(pm*rho*np.sqrt(1-eta_real**2)/(r1+rho))+psi
+                    phi1 = np.mod(pm*np.arccos(eta_real)+psi-al1_min, 2*np.pi)
+                    
+                    al2_min = np.pi+np.arcsin(rho*np.sqrt(1-eta_real**2)/(r2-rho))+psi
+                    # al2_min = np.arccos(np.sqrt(r2**2-2*rho*r2+rho**2*eta**2)/(r2-rho))+psi 
+                    phi2 = np.mod(al1_min-al2_min+phi1, 2*np.pi)
+                    feas = utils.CheckFeasibility(arc1, arc2, al1_min, rho, (rho*phi1, rho*phi2), 'LR')
+        
+                    
+                # if utils.InInt(arc1.angPos_lb, arc1.angPos_ub, al1_min) and utils.InInt(arc2.angPos_lb, arc2.angPos_ub, al2_min):
+                    if feas and rho*(phi1+phi2) < lengthLR:
+                        al1 = al1_min
+                        al2 = al2_min
+                        segLengths = (rho*phi1, rho*phi2)
+                        lengthLR = rho*(phi1+phi2)
+                    
+        return (al1, al2), segLengths
+
+    def LocalMinRL(self):
+        # Local minimum of RL path from arc1 to arc2    
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
+        
+        alphas, segLengths = self.LocalMinLR(self.arc2_ref_trans, self.arc1_ref_trans)
+        
+        if alphas[0]:
+            alphsMinSR = [np.mod(-alphas[1], 2*np.pi),np.mod(-alphas[0], 2*np.pi)]
+        else:
+            return [None, None], [None, None]
+        
+        return alphsMinSR, segLengths[::-1]
+
+    def LocalMinLSL(self):
+        # Local minimum of LSL path from arc1 to arc2    
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
+
+        r1 = self.arc1.arc_radius
+        r2 = self.arc2.arc_radius
+        d = self.len_c1c2
+        psi = self.psi_c1c2
+        
+        phi1 = np.mod(np.arccos(self.rho/(r1+self.rho)), 2*np.pi)
+        phi2 = np.mod(np.arccos(self.rho/(r2+self.rho)), 2*np.pi)
+        len_S = d - (r1+self.rho)*np.sin(phi1)-(r2+self.rho)*np.sin(phi2)
+        if len_S <=0:
+            return (None, None), (None, None, None)
+        al1 = psi+np.pi/2-phi1
+        al2 = al1+phi1+phi2
+        if utils.InInt(self.arc1.angPos_lb, self.arc1.angPos_ub, al1) and utils.InInt(self.arc2.angPos_lb, self.arc2.angPos_ub, al2):
+        
+            return (al1, al2), (self.rho*phi1, len_S, self.rho*phi2)
+        else:
+            return (None, None), (None, None, None)
+            
+    def LocalMinRSR(self):
+        # Local minimum of RSR path from arc1 to arc2    
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
+        
+        r1 = self.arc1.arc_radius
+        r2 = self.arc2.arc_radius        
+        d = self.len_c1c2
+        psi = self.psi_c1c2
+        if r1 < 2*self.rho or r2 < 2*self.rho:
+            return (None, None), (None, None, None)
+        
+        phi1 = np.mod(np.pi+np.arccos(self.rho/(r1-self.rho)), 2*np.pi)
+        phi2 = np.mod(np.pi+np.arccos(self.rho/(r2-self.rho)), 2*np.pi)
+
+        len_S = d - (r1-self.rho)*np.sin(phi1-np.pi)-(r2-self.rho)*np.sin(phi2-np.pi)
+        if len_S <=0:
+            return (None, None), (None, None, None)
+        al1 = psi-3*np.pi/2+phi1
+        al2 = al1-phi1-phi2
+        if utils.InInt(self.arc1.angPos_lb,self. arc1.angPos_ub, al1) and utils.InInt(self.arc2.angPos_lb, self.arc2.angPos_ub, al2):
+        
+            return (al1, al2), (self.rho*phi1, len_S, self.rho*phi2)
+        else:
+            return (None, None), (None, None, None)
+
+    def LocalMinLSR(self, arc1=None, arc2=None):
+        # Local minimum of LSR path from arc1 to arc2    
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
+        if arc1 is None:
+            arc1 = self.arc1        
+            arc2 = self.arc2
+            psi = self.psi_c1c2
+        else:
+            psi = np.arctan2(arc2.cntr_y-arc1.cntr_y, arc2.cntr_x-arc1.cntr_x)
+            
+        r1 = arc1.arc_radius
+        r2 = arc2.arc_radius        
+        d = self.len_c1c2
+        rho = self.rho
+        if r2 < 2*rho:
+            return (None, None), (None, None, None)
+        phi1 = np.arccos(rho/(r1+rho))
+        phi2 = np.mod(np.pi+np.arccos(rho/(r2-rho)), 2*np.pi)
+        len_S = d - (r1+rho)*np.sin(phi1)-(r2-rho)*np.sin(phi2-np.pi)
+        if len_S <=0:
+            return (None, None), (None, None, None)
+        al1 = psi+np.pi/2-phi1
+        al2 = al1+phi1-phi2
+        if utils.InInt(self.arc1.angPos_lb, self.arc1.angPos_ub, al1) and utils.InInt(self.arc2.angPos_lb, self.arc2.angPos_ub, al2):    
+            return (al1, al2), (rho*phi1, len_S, rho*phi2)
+        else:
+            return (None, None), (None, None, None)
+
+    def LocalMinRSL(self):
+        # Local minimum of RSR path from arc1 to arc2    
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
+        
+        alphas, segLengths = self.LocalMinLSR(self.arc2_ref_trans, self.arc1_ref_trans)
+        # self.PlotDubPath(alphas, segLengths, 'LSR', self.arc2_ref_trans, self.arc1_ref_trans)
+        # plt.show()
+        if alphas[0]:
+            alphsMinRSL = [np.mod(-alphas[1], 2*np.pi),np.mod(-alphas[0], 2*np.pi)]
+        else:
+            return (None, None), (None, None, None)
+        
+        return alphsMinRSL, segLengths[::-1]
+
+    def LocalMinRLR(self):
+        # Local minimum of RLR path from arc1 to arc2    
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
+        
+        r1 = self.arc1.arc_radius
+        r2 = self.arc2.arc_radius        
+        d = self.len_c1c2
+        psi = self.psi_c1c2
+        rho = self.rho
+        zeta = (r1-rho)**2+(r2-rho)**2
+        c1 = 256*rho**4-64*rho**2
+        c2 = -256*rho**3*d+32*rho*d
+        c3 = 96*rho**2*d**2-32*rho**2*zeta+64*rho**4-4*d**2
+        c4 = -16*rho*d**3+16*rho*d*zeta-32*rho**3*d
+        c5 = d**4 + zeta**2 - 2*zeta*d**2 + 4*rho**2*d**2 -4*(r1-rho)**2*(r2-rho)**2
+        
+        coeffs = [c1, c2, c3, c4, c5]
+        roots = np.roots(coeffs)
+        lengthRLR = 10000000
+        al1, al2 = None, None 
+        segLengths = (None, None, None)
+        for lamda in roots:   
+            if np.imag(lamda)==0 and lamda > 0:   
+                
+                lamda_real = np.real(lamda)
+                if rho**2- lamda_real**2>0:
+                    # al1 = np.pi - np.arcsin(np.sqrt(rho**2- lamda_real**2)/(r1-rho))
+                    beta = 2*np.arcsin(lamda_real/rho)
+                    gamma = np.arcsin(np.sqrt(rho**2-lamda_real**2)/(r1-rho))
+                    al1_min = np.pi-gamma+psi
+                    phi1 = np.mod(3*np.pi/2 -gamma - beta/2, 2*np.pi)
+                    phi2 = np.mod(2*np.pi-beta, 2*np.pi)
+                    phi3 = 3*np.pi/2 - beta/2 - np.arcsin(np.sqrt(rho**2-lamda_real**2)/(r2-rho))
+                    phi3 = np.mod(phi3, 2*np.pi)
+                    al2_min = al1_min-phi1+phi2-phi3
+                    
+                    # al1 = al1_min
+                    # al2 = al2_min
+                    # feas = utils.InInt(self.arc1.angPos_lb, self.arc1.angPos_ub, al1_min) and utils.InInt(self.arc2.angPos_lb, self.arc2.angPos_ub, al2_min)
+                    feas = utils.CheckFeasibility(self.arc1, self.arc2, al1_min, rho, (rho*phi1, rho*phi2, rho*phi3), 'RLR')
+                
+                    if feas and rho*(phi1+phi2+phi3) < lengthRLR:
+                        al1 = al1_min
+                        al2 = al2_min
+                        # segLengths = [rho*phi1, rho*phi2, rho*phi3]
+                        lengthRLR = rho*(phi1+phi2+phi3)
+                        segLengths = (rho*phi1, rho*phi2, rho*phi3)
+                        
+        return (al1, al2), segLengths
+        
+    
+    def PathL_A2A(self):
+        
+        if self.len_c1c2 > self.arc1.arc_radius+self.arc2.arc_radius+2*self.rho:
+            return (None, None), None
+        al1 = self.psi_c1c2+ np.arccos( ((self.arc1.arc_radius+self.rho)**2 + self.len_c1c2**2 - ((self.arc2.arc_radius+self.rho)**2 ))/(2*self.len_c1c2*(self.arc1.arc_radius+self.rho)))
+        
+        phi = np.arccos( ((self.arc1.arc_radius+self.rho)**2 - self.len_c1c2**2 + ((self.arc2.arc_radius+self.rho)**2 ))/(2*(self.arc2.arc_radius+self.rho)*(self.arc1.arc_radius+self.rho)))
+        al2 = al1+phi
+        if utils.InInt(self.arc1.angPos_lb, self.arc1.angPos_ub, al1) and utils.InInt(self.arc2.angPos_lb, self.arc2.angPos_ub, al2):
+            return (al1, al2), rho*phi
+        else:
+            return (None, None), None
+    
+    def PathS_A2A(self):
+        
+        al1 = np.pi/2+self.psi_c1c2+ np.arcsin( (self.arc2.arc_radius- self.arc1.arc_radius)/self.len_c1c2 )
+        len_S = np.sqrt(self.len_c1c2**2 -(self.arc2.arc_radius- self.arc1.arc_radius)**2 )
+        if utils.InInt(self.arc1.angPos_lb, self.arc1.angPos_ub, al1) and utils.InInt(self.arc2.angPos_lb, self.arc2.angPos_ub, al1):
+            return (al1, al1), len_S
+        else:
+            return (None, None), None
+            
+    def PlotA2APath(self, alphas, segLengths, pathType, arc1=None, arc2=None):
+        if arc1 is None:
+            arc1 = self.arc1
+            arc2 = self.arc2
+        if alphas[0]:
+            pathfmt = SimpleNamespace(color='blue', linewidth=2, linestyle='-', marker='x')
+            arcfmt = SimpleNamespace(color='m', linewidth=1, linestyle='--', marker='x')
+            arrowfmt = SimpleNamespace(color='g', linewidth=1, linestyle='-', marker='x')
+            al1 = alphas[0]
+            al2 = alphas[1]    
+            iniPt = np.array([arc1.cntr_x+arc1.arc_radius*np.cos(al1), arc1.cntr_y+arc1.arc_radius*np.sin(al1)])
+            iniHdng = al1-np.pi/2
+            iniConf_min = np.array([iniPt[0], iniPt[1], iniHdng])           
+            finPt = np.array([arc2.cntr_x+arc2.arc_radius*np.cos(al2), arc2.cntr_y+arc2.arc_radius*np.sin(al2)])
+            finHdng = al2-np.pi/2     
+            du.PlotDubPathSegments(iniConf_min, pathType, segLengths, self.rho, pathfmt)
+            
+            utils.PlotArc(arc1, arcfmt)
+            utils.PlotArc(arc2, arcfmt)        
+            utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
+            utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
+            utils.PlotLineSeg([arc1.cntr_x, arc1.cntr_y], [arc2.cntr_x, arc2.cntr_y], arrowfmt)      
+            plt.axis('equal')
+            plt.show()
+        return
+    
+    def PlotAllPaths(self, candPathsList):
+        pathfmt = SimpleNamespace(color='blue', linewidth=2, linestyle='-', marker='x')
+        arcfmt = SimpleNamespace(color='m', linewidth=1, linestyle='--', marker='x')
+        arrowfmt = SimpleNamespace(color='g', linewidth=1, linestyle='-', marker='x')
+        for candPath in candPathsList:
+            print('candPath: ', candPath)    
+            al1 = candPath.angPos_arc1
+            
+            iniPt = np.array([self.arc1.cntr_x+self.arc1.arc_radius*np.cos(al1), self.arc1.cntr_y+self.arc1.arc_radius*np.sin(al1)])
+            iniHdng = al1-np.pi/2
+            iniConf_min = np.array([iniPt[0], iniPt[1], iniHdng])                           
+            du.PlotDubPathSegments(iniConf_min, candPath.pathType, candPath.segLengths, self.rho, pathfmt)
+            
+            utils.PlotArc(self.arc1, arcfmt)
+            utils.PlotArc(self.arc2, arcfmt)   
+            al2 = candPath.angPos_arc2
+            finPt = np.array([self.arc2.cntr_x+self.arc2.arc_radius*np.cos(al2), self.arc2.cntr_y+self.arc2.arc_radius*np.sin(al2)])
+            finHdng = al2-np.pi/2      
+            utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
+            utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
+            utils.PlotLineSeg([self.arc1.cntr_x, self.arc1.cntr_y], [self.arc2.cntr_x, self.arc2.cntr_y], arrowfmt)      
+            plt.axis('equal')
+            plt.show()
+        return
+    def A2AMinDubins(self):
+        # lengthsVec = []
+        # candPathsList = []
+        
+        ######################## One Segment Paths ########################
+        # Path S
+        alphas, segLength = self.PathS_A2A()
+        if alphas[0]:
+            cp = CandidatePath('S',alphas[0], alphas[1], (segLength,0.))
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(segLength)
+        
+        ## Path L
+        alphas, segLength = self.PathL_A2A()
+        if alphas[0]:
+            cp = CandidatePath('L',alphas[0], alphas[1], (segLength,0.))
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(segLength)
+        
+        ######################## Local minima of the paths with one degree of freedom ########################
+        
+        ## Path LS
+        alphas, segLengths = self.LocalMinLS()
+        if alphas[0]:
+            cp = CandidatePath('LS',alphas[0], alphas[1], segLengths)
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(sum(segLengths))
+            
+        ## Path SL
+        alphas, segLengths = self.LocalMinSL()
+        if alphas[0]:
+            cp = CandidatePath('SL',alphas[0], alphas[1], segLengths)
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(sum(segLengths))
+
+        ## Path RS
+        alphas, segLengths = self.LocalMinRS()
+        if alphas[0]:
+            cp = CandidatePath('RS',alphas[0], alphas[1], segLengths)
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(sum(segLengths))
+        ## Path SR
+        alphas, segLengths = self.LocalMinSR()
+        if alphas[0]:
+            cp = CandidatePath('SR',alphas[0], alphas[1], segLengths)
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(sum(segLengths))
+        ## Path LR
+        alphas, segLengths = self.LocalMinLR()
+        if alphas[0]:
+            cp = CandidatePath('LR',alphas[0], alphas[1], segLengths)
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(sum(segLengths))
+        ## Path RL
+        alphas, segLengths = self.LocalMinRL()
+        if alphas[0]:
+            cp = CandidatePath('RL',alphas[0], alphas[1], segLengths)
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(sum(segLengths))
+        ## Path LSL
+        alphas, segLengths = self.LocalMinLSL()
+        if alphas[0]:
+            cp = CandidatePath('LSL',alphas[0], alphas[1], segLengths)
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(sum(segLengths))
+        ## Path RSR
+        alphas, segLengths = self.LocalMinRSR()
+        if alphas[0]:
+            cp = CandidatePath('RSR',alphas[0], alphas[1], segLengths)
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(sum(segLengths))
+        ## Path LSR
+        alphas, segLengths = self.LocalMinLSR()
+        if alphas[0]:
+            cp = CandidatePath('LSR',alphas[0], alphas[1], segLengths)
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(sum(segLengths))
+        ## Path RSL
+        alphas, segLengths = self.LocalMinRSL()
+        if alphas[0]:
+            cp = CandidatePath('RSL',alphas[0], alphas[1], segLengths)
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(sum(segLengths))
+        ## Path RLR
+        alphas, segLengths = self.LocalMinRLR()
+        if alphas[0]:
+            cp = CandidatePath('RLR',alphas[0], alphas[1], segLengths)
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(sum(segLengths))
+        
+        ######################## Boudnary candidate ########################            
+        ## candidate paths where one end of the path is at the boudnary of an arc
+        ## other end could be anywhere on the second arc
+        self.OneBoundaryPaths()
+
+        ######################## Boudnary to boundary candidates ########################            
+        ## candidate paths where both ends of the path are at the boudnaries of the arcs
+        self.TwoBoundaryPaths()
+
+        if self.lengthsVec:
+            minInd = np.argmin(self.lengthsVec)
+        else:
+            return None, None, None
+        return self.lengthsVec[minInd], self.candPathsList[minInd], self.candPathsList
+    
+    def TwoBoundaryPaths(self):
+        for iniConf in [self.arc1_bound_config_lb, self.arc1_bound_config_ub]:
+            for finConf in [self.arc2_bound_config_lb, self.arc2_bound_config_ub]:
+                path_bnd2bnd = dubins.shortest_path(iniConf, finConf, self.rho)
+                # pathType = du.DubPathTypeNum2Str(path_bnd2bnd.path_type())
+                cp = CandidatePath(du.DubPathTypeNum2Str(path_bnd2bnd.path_type()), iniConf[2]+np.pi/2, finConf[2]+np.pi/2, (path_bnd2bnd.segment_length(0), path_bnd2bnd.segment_length(1), path_bnd2bnd.segment_length(2)))
+                self.candPathsList.append(cp)
+                self.lengthsVec.append(path_bnd2bnd.path_length())                
+        return
+    
+    def OneBoundaryPaths(self):
+
+        ## lower bound and upper bound of arc1 to any config on arc2: shortest path
+        for angPos_bnd in [self.arc1.angPos_lb, self.arc1.angPos_ub]:            
+            arc1_bound_config = (self.arc1.cntr_x+self.arc1.arc_radius*np.cos(angPos_bnd), self.arc1.cntr_y+self.arc1.arc_radius*np.sin(angPos_bnd), angPos_bnd-np.pi/2)
+            arc2_trans = self.RotateTransArc(arc1_bound_config, self.arc2)
+            p2a_arc1bnd2arc2 = dubP2A.P2ArcDubins((arc2_trans.cntr_x, arc2_trans.cntr_y), arc2_trans.arc_radius, (arc2_trans.angPos_lb, arc2_trans.angPos_ub),  self.rho)
+            minPath_p2a, _ = p2a_arc1bnd2arc2.P2AMinDubins()
+            if minPath_p2a:
+                cp1 = CandidatePath(minPath_p2a.pathType, angPos_bnd, minPath_p2a.angPos+angPos_bnd-np.pi/2, minPath_p2a.segLengths)
+                self.candPathsList.append(cp1)
+                self.lengthsVec.append(sum(minPath_p2a.segLengths))
+        
+        for angPos_bnd in [self.arc2.angPos_lb, self.arc2.angPos_ub]:
+            arc2_bound_config = (self.arc2.cntr_x+self.arc2.arc_radius*np.cos(angPos_bnd), self.arc2.cntr_y+self.arc2.arc_radius*np.sin(angPos_bnd), angPos_bnd+np.pi/2)
+            arc1_trans = self.RotateTransArc(arc2_bound_config, self.arc1)
+            arc1_trans_ref = self.ReflectXaxis(arc1_trans)
+            p2a_arc2bnd2arc1 = dubP2A.P2ArcDubins((arc1_trans_ref.cntr_x, arc1_trans_ref.cntr_y), arc1_trans_ref.arc_radius, (arc1_trans_ref.angPos_lb, arc1_trans_ref.angPos_ub),  self.rho)
+            minPath_p2a, _ = p2a_arc2bnd2arc1.P2AMinDubins()
+            # print('min path and pos on arc1: ', minPath_p2a.angPos)
+            # angPos_arc1 = -minPath_p2a.angPos+angPos_bnd+np.pi/2
+            # pathMode = minPath_p2a.pathType[::-1]
+            # segLengths = minPath_p2a.segLengths[::-1]
+            cp1 = CandidatePath(minPath_p2a.pathType[::-1], -minPath_p2a.angPos+angPos_bnd+np.pi/2, angPos_bnd, minPath_p2a.segLengths[::-1])
+            self.candPathsList.append(cp1)
+            self.lengthsVec.append(sum(minPath_p2a.segLengths))
+        
+        
+        return
+    
 if __name__ == "__main__":
 
     LSL =0; LSR = 1; RSL = 2; RSR = 3; RLR = 4; LRL = 5;     
-    rho = 1    
-    pathfmt = SimpleNamespace(color='blue', linewidth=2, linestyle='-', marker='x')
-    arcfmt = SimpleNamespace(color='m', linewidth=1, linestyle='--', marker='x')
-    arrowfmt = SimpleNamespace(color='g', linewidth=1, linestyle='-', marker='x')
+    rho = 1   
+    tic = timer()
+    # A2ADub = Arc2ArcDubins([0, 0], 2.6, [2.5, 6.28], [-4.5, -5], 2.8, [.5, 4.28], 1) 
+
+    # A2ADub = Arc2ArcDubins([0, 0], 2.5, [0.01, 6.28], [1.5, 4], 2.8, [0.01, 6.28], 1) # for RL
+    # A2ADub = Arc2ArcDubins([0, 0], 2.8, [1.51, 6.2], [-1.5, 3.75], 2.5, [0.01, 6.2], 1) #for LR
+    
+    # A2ADub = Arc2ArcDubins([0, 0], 2.5, [0.01, 6.28], [.6, 0.4], 2.7, [0.01, 6.28], 1) # for RLR
+    
+
+    # alphas, segLengths = A2ADub.LocalMinRLR()
+    # alphas, segLengths = A2ADub.PathS_A2A()
+    # print('alphas: ', alphas)    
+    # print('segLengths: ', segLengths)
+    # A2ADub.PlotDubPath(alphas, segLengths, 'RLR')
+    # A2ADub.OneBoundaryPaths()
+    arc1 = Arc(1, 2, 2.6, 2.5, 6.28)
+    arc2 = Arc(-3.5, -3., 2.8, .5, 4.28)
+
+    A2ADub = Arc2ArcDubins(arc1, arc2, 1) 
+    
+    minLength, minPath, candPathsList = A2ADub.A2AMinDubins()   
+    comp_time = timer()-tic
+    
+    print('minLength: ', minLength)  
+    print('comp_time: ', comp_time)  
+    # if minPath:    
+    #     A2ADub.PlotAllPaths(candPathsList)
+    #     print('minPath: ', minPath)  
+    #     A2ADub.PlotA2APath((minPath.angPos_arc1, minPath.angPos_arc2), minPath.segLengths, minPath.pathType)
     
     ############################# Test local min LS #############################
     
-    # arc1 = utils.Arc(0,0, 2.5, 0.1, 6.2)
-    # arc2 = utils.Arc(-6,-2, 2.5, 0.1, 6.2)
-    # minAlphasLS, segLengthsLS = LocalMinLS(arc1, arc2, rho)
-    # al1 = minAlphasLS[0]
-    # al2 = minAlphasLS[1]
+    # arc1 = utils.Arc(0,0, 2.5, 0.1, 2.2)
+    # arc2 = utils.Arc(7,2.5, 2.5, 2.1, 4.2)
+    # alphas, segLengths = LocalMinLS(arc1, arc2, rho)
+    # print('segLengths: ', segLengths)
     
-    # if np.isfinite(al1):
-        
+    # if np.isfinite(alphas[0]):
+    #     al1 = alphas[0]
+    #     al2 = alphas[1]    
     #     iniPt = np.array([arc1.c_x+arc1.arc_radius*np.cos(al1), arc1.c_y+arc1.arc_radius*np.sin(al1)])
     #     iniHdng = al1-np.pi/2
-    #     iniConf_minLS = np.array([iniPt[0], iniPt[1], iniHdng])   
+    #     iniConf_minLS = np.array([iniPt[0], iniPt[1], iniHdng])           
     #     finPt = np.array([arc2.c_x+arc2.arc_radius*np.cos(al2), arc2.c_y+arc2.arc_radius*np.sin(al2)])
     #     finHdng = al2-np.pi/2     
-    #     du.PlotDubPathSegments(iniConf_minLS, 'LS', segLengthsLS, rho, pathfmt)
+    #     du.PlotDubPathSegments(iniConf_minLS, 'LS', segLengths, rho, pathfmt)
         
     #     utils.PlotArc(arc1, arcfmt)
     #     utils.PlotArc(arc2, arcfmt)        
     #     utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
-    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt)        
+    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
+    #     utils.PlotLineSeg([arc1.c_x, arc1.c_y], [arc2.c_x, arc2.c_y], arrowfmt)      
     #     plt.axis('equal')
     #     plt.show()
     
     ############################# Test local min RS #############################
     
     # arc1 = utils.Arc(0,0, 2.5, 0.1, 6.2)
-    # arc2 = utils.Arc(1,-6, 2.5, 0.1, 6.2)
-    # minAlphasRS, segLengthsRS = LocalMinRS(arc1, arc2, rho)
-    # al1 = minAlphasRS[0]
-    # al2 = minAlphasRS[1]
+    # arc2 = utils.Arc(7,2.5, 2.5, 0.1, 6.2)
+    # alphas, segLengths = LocalMinRS(arc1, arc2, rho)
+    # print('segLengths: ', segLengths)
     
-    # if np.isfinite(al1):
-        
+    # if np.isfinite(alphas[0]):
+    #     al1 = alphas[0]
+    #     al2 = alphas[1]    
     #     iniPt = np.array([arc1.c_x+arc1.arc_radius*np.cos(al1), arc1.c_y+arc1.arc_radius*np.sin(al1)])
     #     iniHdng = al1-np.pi/2
-    #     iniConf_minRS = np.array([iniPt[0], iniPt[1], iniHdng])   
+    #     iniConf_minLS = np.array([iniPt[0], iniPt[1], iniHdng])           
     #     finPt = np.array([arc2.c_x+arc2.arc_radius*np.cos(al2), arc2.c_y+arc2.arc_radius*np.sin(al2)])
     #     finHdng = al2-np.pi/2     
-    #     du.PlotDubPathSegments(iniConf_minRS, 'RS', segLengthsRS, rho, pathfmt)
+    #     du.PlotDubPathSegments(iniConf_minLS, 'RS', segLengths, rho, pathfmt)
         
     #     utils.PlotArc(arc1, arcfmt)
     #     utils.PlotArc(arc2, arcfmt)        
     #     utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
-    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt)        
+    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt) 
+    #     utils.PlotLineSeg([arc1.c_x, arc1.c_y], [arc2.c_x, arc2.c_y], arrowfmt)       
     #     plt.axis('equal')
     #     plt.show()
     
 ############################# Test local min SL #############################
     
+
     # arc1 = utils.Arc(0,0, 2.5, 0.1, 6.2)
-    # arc2 = utils.Arc(1,6, 2.5, 0.1, 6.2)
-    # minAlphasSL, segLengthsSL = LocalMinSL(arc1, arc2, rho)
-    # al1 = minAlphasSL[0]
-    # al2 = minAlphasSL[1]
+    # arc2 = utils.Arc(-6, 4, 2.5, 0.1, 6.2)
+    # alphas, segLengths = LocalMinSL(arc1, arc2, rho)
     
-    # if np.isfinite(al1):
-        
+    # print('alphas: ', alphas)    
+    # print('segLengths: ', segLengths)
+    
+    # if np.isfinite(alphas[0]):
+    #     al1 = alphas[0]
+    #     al2 = alphas[1]    
     #     iniPt = np.array([arc1.c_x+arc1.arc_radius*np.cos(al1), arc1.c_y+arc1.arc_radius*np.sin(al1)])
     #     iniHdng = al1-np.pi/2
-    #     iniConf_minSL = np.array([iniPt[0], iniPt[1], iniHdng])   
+    #     iniConf_minLS = np.array([iniPt[0], iniPt[1], iniHdng])           
     #     finPt = np.array([arc2.c_x+arc2.arc_radius*np.cos(al2), arc2.c_y+arc2.arc_radius*np.sin(al2)])
     #     finHdng = al2-np.pi/2     
-    #     du.PlotDubPathSegments(iniConf_minSL, 'SL', segLengthsSL, rho, pathfmt)
+    #     du.PlotDubPathSegments(iniConf_minLS, 'SL', segLengths, rho, pathfmt)
         
     #     utils.PlotArc(arc1, arcfmt)
     #     utils.PlotArc(arc2, arcfmt)        
     #     utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
-    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt)        
+    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
+    #     utils.PlotLineSeg([arc1.c_x, arc1.c_y], [arc2.c_x, arc2.c_y], arrowfmt)      
     #     plt.axis('equal')
     #     plt.show()
 
 ############################# Test local min SR #############################
     
-    # arc1 = utils.Arc(0,0, 2.5, 0.01, 6.28)
-    # arc2 = utils.Arc(4, -5, 2.5, 0.01, 6.28)
-    # minAlphasSR, segLengthsSR = LocalMinSR(arc1, arc2, rho)
-    # al1 = minAlphasSR[0]
-    # al2 = minAlphasSR[1]
+    # arc1 = utils.Arc(0,0, 2.5, 0.1, 6.2)
+    # arc2 = utils.Arc(6, 4, 2.5, 0.1, 6.2)
+    # alphas, segLengths = LocalMinSR(arc1, arc2, rho)
     
-    # if np.isfinite(al1):
-        
+    # print('alphas: ', alphas)    
+    # print('segLengths: ', segLengths)
+    
+    # if np.isfinite(alphas[0]):
+    #     al1 = alphas[0]
+    #     al2 = alphas[1]    
     #     iniPt = np.array([arc1.c_x+arc1.arc_radius*np.cos(al1), arc1.c_y+arc1.arc_radius*np.sin(al1)])
     #     iniHdng = al1-np.pi/2
-    #     iniConf_minSR = np.array([iniPt[0], iniPt[1], iniHdng])   
+    #     iniConf_minLS = np.array([iniPt[0], iniPt[1], iniHdng])           
     #     finPt = np.array([arc2.c_x+arc2.arc_radius*np.cos(al2), arc2.c_y+arc2.arc_radius*np.sin(al2)])
     #     finHdng = al2-np.pi/2     
-    #     du.PlotDubPathSegments(iniConf_minSR, 'SR', segLengthsSR, rho, pathfmt)
+    #     du.PlotDubPathSegments(iniConf_minLS, 'SR', segLengths, rho, pathfmt)
         
     #     utils.PlotArc(arc1, arcfmt)
     #     utils.PlotArc(arc2, arcfmt)        
     #     utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
-    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt)        
+    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
+    #     utils.PlotLineSeg([arc1.c_x, arc1.c_y], [arc2.c_x, arc2.c_y], arrowfmt)      
     #     plt.axis('equal')
     #     plt.show()
         
 ############################# Test local min LR #############################
     
     # arc1 = utils.Arc(0,0, 2.5, 0.01, 6.28)
-    # arc2 = utils.Arc(-1., -3.5, 2.5, 0.01, 6.28)
-    # minAlphasLR, segLengthsLR = LocalMinLR(arc1, arc2, rho)
-    # al1 = minAlphasLR[0]
-    # al2 = minAlphasLR[1]
+    # arc2 = utils.Arc(-3.5, 3, 2.5, 0.01, 6.28)
+    # alphas, segLengths = LocalMinLR(arc1, arc2, rho)
     
-    # if np.isfinite(al1):
-        
+    # print('alphas: ', alphas)    
+    # print('segLengths: ', segLengths)
+    
+    # if np.isfinite(alphas[0]):
+    #     al1 = alphas[0]
+    #     al2 = alphas[1]    
     #     iniPt = np.array([arc1.c_x+arc1.arc_radius*np.cos(al1), arc1.c_y+arc1.arc_radius*np.sin(al1)])
     #     iniHdng = al1-np.pi/2
-    #     iniConf_minLR = np.array([iniPt[0], iniPt[1], iniHdng])   
+    #     iniConf_minLS = np.array([iniPt[0], iniPt[1], iniHdng])           
     #     finPt = np.array([arc2.c_x+arc2.arc_radius*np.cos(al2), arc2.c_y+arc2.arc_radius*np.sin(al2)])
     #     finHdng = al2-np.pi/2     
-    #     du.PlotDubPathSegments(iniConf_minLR, 'LR', segLengthsLR, rho, pathfmt)
+    #     du.PlotDubPathSegments(iniConf_minLS, 'LR', segLengths, rho, pathfmt)
         
     #     utils.PlotArc(arc1, arcfmt)
     #     utils.PlotArc(arc2, arcfmt)        
     #     utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
-    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt)        
+    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
+    #     utils.PlotLineSeg([arc1.c_x, arc1.c_y], [arc2.c_x, arc2.c_y], arrowfmt)      
     #     plt.axis('equal')
     #     plt.show()
     
 ############################# Test local min RL #############################
     
-    arc1 = utils.Arc(0,0, 2.5, 0.01, 6.28)
-    arc2 = utils.Arc(4., 2.5, 2.5, 0.01, 6.28)
-    minAlphasRL, segLengthsRL = LocalMinRL(arc1, arc2, rho)
-    al1 = minAlphasRL[0]
-    al2 = minAlphasRL[1]
+    # arc1 = utils.Arc(0,0, 2.5, 0.01, 6.28)
+    # arc2 = utils.Arc(-3.5, -3, 2.5, 0.01, 6.28)
+    # alphas, segLengths = LocalMinRL(arc1, arc2, rho)
     
-    if np.isfinite(al1):
+    # print('alphas: ', alphas)    
+    # print('segLengths: ', segLengths)
+    
+    # if np.isfinite(alphas[0]):
+    #     al1 = alphas[0]
+    #     al2 = alphas[1]    
+    #     iniPt = np.array([arc1.c_x+arc1.arc_radius*np.cos(al1), arc1.c_y+arc1.arc_radius*np.sin(al1)])
+    #     iniHdng = al1-np.pi/2
+    #     iniConf_minLS = np.array([iniPt[0], iniPt[1], iniHdng])           
+    #     finPt = np.array([arc2.c_x+arc2.arc_radius*np.cos(al2), arc2.c_y+arc2.arc_radius*np.sin(al2)])
+    #     finHdng = al2-np.pi/2     
+    #     du.PlotDubPathSegments(iniConf_minLS, 'RL', segLengths, rho, pathfmt)
         
-        iniPt = np.array([arc1.c_x+arc1.arc_radius*np.cos(al1), arc1.c_y+arc1.arc_radius*np.sin(al1)])
-        iniHdng = al1-np.pi/2
-        iniConf_minRL = np.array([iniPt[0], iniPt[1], iniHdng])   
-        finPt = np.array([arc2.c_x+arc2.arc_radius*np.cos(al2), arc2.c_y+arc2.arc_radius*np.sin(al2)])
-        finHdng = al2-np.pi/2     
-        du.PlotDubPathSegments(iniConf_minRL, 'RL', segLengthsRL, rho, pathfmt)
+    #     utils.PlotArc(arc1, arcfmt)
+    #     utils.PlotArc(arc2, arcfmt)        
+    #     utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
+    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
+    #     utils.PlotLineSeg([arc1.c_x, arc1.c_y], [arc2.c_x, arc2.c_y], arrowfmt)      
+    #     plt.axis('equal')
+    #     plt.show()
+    
+############################# Test local min CSC #############################
+    
+    # arc1 = utils.Arc(0, 0, 2.5, 0.01, 6.28)
+    # arc2 = utils.Arc(-2, 4, 3, 0.01, 6.28)
+    
+    # # arc1 = utils.Arc(0, 0, 2.5, 0.01, 6.28)
+    # # arc2 = utils.Arc(-.6, 0.4, 2.7, 0.01, 6.28)
+    
+    # alphas, segLengths = LocalMinRSR(arc1, arc2, rho)
+
+    
+    
+    # if np.isfinite(alphas[0]):
+    #     al1 = alphas[0]
+    #     al2 = alphas[1]    
+    #     iniPt = np.array([A2ADub.arc1.cntr_x+A2ADub.arc1.arc_radius*np.cos(al1), A2ADub.arc1.cntr_y+A2ADub.arc1.arc_radius*np.sin(al1)])
+    #     iniHdng = al1-np.pi/2
+    #     iniConf_minLS = np.array([iniPt[0], iniPt[1], iniHdng])           
+    #     finPt = np.array([A2ADub.arc2.cntr_x+A2ADub.arc2.arc_radius*np.cos(al2), A2ADub.arc2.cntr_y+A2ADub.arc2.arc_radius*np.sin(al2)])
+    #     finHdng = al2-np.pi/2     
+    #     du.PlotDubPathSegments(iniConf_minLS, 'LSL', segLengths, rho, pathfmt)
         
-        utils.PlotArc(arc1, arcfmt)
-        utils.PlotArc(arc2, arcfmt)        
-        utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
-        utils.PlotArrow(finPt, finHdng, 1, arrowfmt)        
-        plt.axis('equal')
-        plt.show()
+    #     utils.PlotArc(A2ADub.arc1, arcfmt)
+    #     utils.PlotArc(A2ADub.arc2, arcfmt)        
+    #     utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
+    #     utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
+    #     utils.PlotLineSeg([A2ADub.arc1.cntr_x, A2ADub.arc1.cntr_y], [A2ADub.arc2.cntr_x, A2ADub.arc2.cntr_y], arrowfmt)      
+    #     plt.axis('equal')
+    #     plt.show()

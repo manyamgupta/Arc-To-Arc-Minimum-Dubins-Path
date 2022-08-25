@@ -280,8 +280,8 @@ class P2ArcDubins:
         
         psi1_vec = (psi1a, np.pi - psi1a)
         lengthSL = 10000000
-        alphaSL = np.nan
-        segLengths = (np.nan, np.nan)
+        alphaSL = None
+        segLengths = (None, None)
         for psi1 in psi1_vec:
             phi2 = np.mod(psi1+pi/2, 2*pi)        
             alphaSL_cand = np.mod(phi2+pi/2, 2*pi  )        

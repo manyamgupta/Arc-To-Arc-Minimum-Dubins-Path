@@ -15,6 +15,7 @@ class Arc:
     cntr_x: float
     cntr_y: float
     arc_radius: float
+    # arc goes from lb to ub in ccw direction
     angPos_lb: float # angular position lower bound
     angPos_ub: float # angular position upper bound
 

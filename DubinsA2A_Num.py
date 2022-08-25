@@ -8,10 +8,19 @@ import dubutils as du
 import utils
 from collections import namedtuple
 from types import SimpleNamespace
+from dataclasses import dataclass
+
+@dataclass
+class CandidatePath:
+    pathType: str 
+    angPos_arc1: float # angular position at first arc
+    angPos_arc2: float # angular position at second arc
+    segLengths: tuple
+    
 def PathRS(arc1, arc2, al1, rho):
     # Assumption: cenetr of the first arc (0,0)
-    c_x = arc2.c_x
-    c_y = arc2.c_y
+    c_x = arc2.cntr_x
+    c_y = arc2.cntr_y
     r1 = arc1.arc_radius
     r2 = arc2.arc_radius
     lx = c_x-(r1-rho)*np.cos(al1)
@@ -33,6 +42,38 @@ def PathRS(arc1, arc2, al1, rho):
     # inf_y = (r1-rho)*np.sin(al1) + rho*sin(psi1+psi2-np.pi/2)
     
     return lengthLS, [rho*phi1, Ls]
+
+def A2AMinDubinsNum(arc1, arc2, rho, nd=1000):
+    
+    alVec1 = utils.AngularLinSpace(arc1.angPos_lb, arc1.angPos_ub, nd)
+    alVec2 = utils.AngularLinSpace(arc2.angPos_lb, arc2.angPos_ub, nd)
+    lenVec = np.zeros([nd, nd])
+    iniConfVec = np.array([arc1.cntr_x + arc1.arc_radius*np.cos(alVec1), arc1.cntr_y+arc1.arc_radius*np.sin(alVec1), alVec1-pi/2])
+    finConfVec = np.array([arc2.cntr_x + arc2.arc_radius*np.cos(alVec2), arc2.cntr_y+arc2.arc_radius*np.sin(alVec2), alVec2-pi/2])
+    
+    for j in range(nd):
+        for k in range(nd):
+            iniConf = iniConfVec[:,j]      
+            finConf = finConfVec[:,k]
+            pathDub = dubins.shortest_path(iniConf, finConf, rho)
+            if pathDub:
+                lenVec[j,k] = pathDub.path_length()                
+            else:
+                lenVec[j,k] = 1000000.
+    minInd = np.argmin(lenVec)
+    minPathLength = np.min(lenVec)
+    inds2D = np.unravel_index(minInd, (nd,nd))
+    alpha1_min = alVec1[inds2D[0]]
+    alpha2_min = alVec2[inds2D[1]]      
+    
+    iniConf_min = np.array([arc1.cntr_x + arc1.arc_radius*np.cos(alpha1_min), arc1.cntr_y+arc1.arc_radius*np.sin(alpha1_min), alpha1_min-pi/2])
+    finConf_min = np.array([arc2.cntr_x + arc2.arc_radius*np.cos(alpha2_min), arc2.cntr_y+arc2.arc_radius*np.sin(alpha2_min), alpha2_min-pi/2])
+    
+    pathDub_min = dubins.shortest_path(iniConf_min, finConf_min, rho) 
+    segLengths = (pathDub_min.segment_length(0), pathDub_min.segment_length(1), pathDub_min.segment_length(2) )
+    
+    sp = CandidatePath(du.DubPathTypeNum2Str(pathDub_min.path_type()), alpha1_min,alpha2_min, segLengths)
+    return minPathLength, sp
 
 if __name__ == "__main__":
 
@@ -103,7 +144,7 @@ if __name__ == "__main__":
     nd = 1000
     r1 = arc1.arc_radius        
     r2 = arc2.arc_radius  
-    psi3 = np.arctan2(arc2.c_y, arc2.c_x)
+    psi3 = np.arctan2(arc2.cntr_y, arc2.cntr_x)
     pathNum = 1
     alVsLen = np.zeros([nd,4])
     alVec = utils.AngularLinSpace(arc1.angPos_lb, arc1.angPos_ub, nd)
@@ -111,7 +152,7 @@ if __name__ == "__main__":
     lenPrVec = np.ones(nd)*np.nan
     lenPrVec2 = np.ones(nd)*np.nan
 
-    lineSeg = np.array([[arc1.c_x, arc1.c_y], [arc2.c_x, arc2.c_y]])
+    lineSeg = np.array([[arc1.cntr_x, arc1.cntr_y], [arc2.cntr_x, arc2.cntr_y]])
     
     # alVec = [6]
     LengthVec = np.zeros(nd)

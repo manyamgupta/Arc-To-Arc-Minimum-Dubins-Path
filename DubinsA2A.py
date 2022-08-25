@@ -10,14 +10,14 @@ from types import SimpleNamespace
 from dataclasses import dataclass
 from timeit import default_timer as timer
 
-@dataclass
-class Arc:
-    cntr_x: float
-    cntr_y: float
-    arc_radius: float
-    # arc goes from lb to ub in ccw direction
-    angPos_lb: float # angular position lower bound
-    angPos_ub: float # angular position upper bound
+# @dataclass
+# class Arc:
+#     cntr_x: float
+#     cntr_y: float
+#     arc_radius: float
+#     # arc goes from lb to ub in ccw direction
+#     angPos_lb: float # angular position lower bound
+#     angPos_ub: float # angular position upper bound
 
 @dataclass
 class CandidatePath:
@@ -50,8 +50,8 @@ class Arc2ArcDubins:
         arc1_ref = self.ReflectXaxis(self.arc1)
         arc2_ref = self.ReflectXaxis(self.arc2)
         
-        self.arc2_ref_trans = Arc(0,0, self.arc2.arc_radius, arc2_ref.angPos_lb, arc2_ref.angPos_ub)
-        self.arc1_ref_trans = Arc(arc1_ref.cntr_x-arc2_ref.cntr_x, arc1_ref.cntr_y-arc2_ref.cntr_y, self.arc1.arc_radius, arc1_ref.angPos_lb, arc1_ref.angPos_ub)
+        self.arc2_ref_trans = utils.Arc(0,0, self.arc2.arc_radius, arc2_ref.angPos_lb, arc2_ref.angPos_ub)
+        self.arc1_ref_trans = utils.Arc(arc1_ref.cntr_x-arc2_ref.cntr_x, arc1_ref.cntr_y-arc2_ref.cntr_y, self.arc1.arc_radius, arc1_ref.angPos_lb, arc1_ref.angPos_ub)
         
         # empty lists for lengths and candidate paths, these are populated when A2AMinDubins() is called
         self.lengthsVec = []
@@ -80,11 +80,11 @@ class Arc2ArcDubins:
         cntr2_trans_rot = utils.RotateVec2(cntr2_trans, -config[2])
         # arc_trans_rot = Arc(cntr2_trans_rot[0], cntr2_trans_rot[1], arc.arc_radius, arc.angPos_lb-config[2], arc.angPos_ub-config[2])
         
-        return Arc(cntr2_trans_rot[0], cntr2_trans_rot[1], arc.arc_radius, arc.angPos_lb-config[2], arc.angPos_ub-config[2])
+        return utils.Arc(cntr2_trans_rot[0], cntr2_trans_rot[1], arc.arc_radius, arc.angPos_lb-config[2], arc.angPos_ub-config[2])
     
     def ReflectXaxis(self, arc):
         # Reflection of an arc across x-axis
-        arc_ref = Arc(arc.cntr_x, -arc.cntr_y, arc.arc_radius, np.mod(-arc.angPos_ub, 2*np.pi), np.mod(-arc.angPos_lb, 2*np.pi))
+        arc_ref = utils.Arc(arc.cntr_x, -arc.cntr_y, arc.arc_radius, np.mod(-arc.angPos_ub, 2*np.pi), np.mod(-arc.angPos_lb, 2*np.pi))
         
         return arc_ref
     def LocalMinLS(self, arc1=None, arc2=None):
@@ -399,9 +399,35 @@ class Arc2ArcDubins:
                         
         return (al1, al2), segLengths
         
-    
+    def PathR_A2A(self):
+        # path with single right arc from arc1 to arc2
+        # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
+        
+        if self.len_c1c2 > self.arc1.arc_radius+self.arc2.arc_radius+2*self.rho - 2*self.rho or self.arc1.arc_radius>self.len_c1c2+self.arc2.arc_radius or self.arc2.arc_radius>self.len_c1c2+self.arc1.arc_radius:
+            return (None, None), None
+        al1a = self.psi_c1c2+ np.arccos( ((self.arc1.arc_radius - self.rho)**2 + self.len_c1c2**2 - ((self.arc2.arc_radius - self.rho)**2 ))/(2*self.len_c1c2*(self.arc1.arc_radius - self.rho)))        
+        phia = 2*np.pi - np.arccos( ((self.arc1.arc_radius - self.rho)**2 - self.len_c1c2**2 + ((self.arc2.arc_radius - self.rho)**2 ))/(2*(self.arc2.arc_radius - self.rho)*(self.arc1.arc_radius - self.rho)))
+        phia = np.mod(phia,2*np.pi)
+        
+        al1b = self.psi_c1c2 -np.arccos( ((self.arc1.arc_radius - self.rho)**2 + self.len_c1c2**2 - ((self.arc2.arc_radius - self.rho)**2 ))/(2*self.len_c1c2*(self.arc1.arc_radius - self.rho)))
+        phib = np.arccos( ((self.arc1.arc_radius - self.rho)**2 - self.len_c1c2**2 + ((self.arc2.arc_radius - self.rho)**2 ))/(2*(self.arc2.arc_radius - self.rho)*(self.arc1.arc_radius - self.rho)))
+        phib = np.mod(phib,2*np.pi)
+        phiVec = (phia, phib)
+        arclength = 10000000.
+        al1Min, al2Min = None, None
+        for indx, al1 in enumerate([al1a, al1b]):
+            phi = phiVec[indx]
+            al2 = np.mod(al1-phi, 2*np.pi)
+            if utils.InInt(self.arc1.angPos_lb, self.arc1.angPos_ub, al1) and utils.InInt(self.arc2.angPos_lb, self.arc2.angPos_ub, al2):
+                if self.rho*phi< arclength:
+                    al1Min = al1
+                    al2Min = al2
+                    arclength = self.rho*phi
+                    
+        return (al1Min, al2Min), arclength
+            
     def PathL_A2A(self):
-        # path with single arc from arc1 to arc2
+        # path with single Left arc from arc1 to arc2
         # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
         
         if self.len_c1c2 > self.arc1.arc_radius+self.arc2.arc_radius+2*self.rho:
@@ -409,9 +435,19 @@ class Arc2ArcDubins:
         al1 = self.psi_c1c2+ np.arccos( ((self.arc1.arc_radius+self.rho)**2 + self.len_c1c2**2 - ((self.arc2.arc_radius+self.rho)**2 ))/(2*self.len_c1c2*(self.arc1.arc_radius+self.rho)))
         
         phi = np.arccos( ((self.arc1.arc_radius+self.rho)**2 - self.len_c1c2**2 + ((self.arc2.arc_radius+self.rho)**2 ))/(2*(self.arc2.arc_radius+self.rho)*(self.arc1.arc_radius+self.rho)))
+        phi = np.mod(phi,2*np.pi)        
         al2 = al1+phi
+        
+        al1b = self.psi_c1c2 - np.arccos( ((self.arc1.arc_radius+self.rho)**2 + self.len_c1c2**2 - ((self.arc2.arc_radius+self.rho)**2 ))/(2*self.len_c1c2*(self.arc1.arc_radius+self.rho)))
+        phib = -np.arccos( ((self.arc1.arc_radius+self.rho)**2 - self.len_c1c2**2 + ((self.arc2.arc_radius+self.rho)**2 ))/(2*(self.arc2.arc_radius+self.rho)*(self.arc1.arc_radius+self.rho)))
+        phib = np.mod(phib, 2*np.pi)        
+        al2b = al1b+phib
+        
         if utils.InInt(self.arc1.angPos_lb, self.arc1.angPos_ub, al1) and utils.InInt(self.arc2.angPos_lb, self.arc2.angPos_ub, al2):
-            return (al1, al2), rho*phi
+            return (al1, al2), self.rho*phi   
+        elif utils.InInt(self.arc1.angPos_lb, self.arc1.angPos_ub, al1b) and utils.InInt(self.arc2.angPos_lb, self.arc2.angPos_ub, al2b):
+            return (al1b, al2b), self.rho*phib   
+             
         else:
             return (None, None), None
     
@@ -426,7 +462,7 @@ class Arc2ArcDubins:
         else:
             return (None, None), None
             
-    def PlotA2APath(self, alphas, segLengths, pathType, arc1=None, arc2=None):
+    def PlotA2APath(self, alphas, segLengths, pathType, arc1=None, arc2=None, pathfmt=None):
         # Plots a dubins path from arc1 to arc2
         # alphas are the start and end positions on the arcs are
         # seglengths are the length of each segment of the Dubins path
@@ -435,8 +471,9 @@ class Arc2ArcDubins:
         if arc1 is None:
             arc1 = self.arc1
             arc2 = self.arc2
-        if alphas[0]:
+        if pathfmt is None:
             pathfmt = SimpleNamespace(color='blue', linewidth=2, linestyle='-', marker='x')
+        if alphas[0]:            
             arcfmt = SimpleNamespace(color='m', linewidth=1, linestyle='--', marker='x')
             arrowfmt = SimpleNamespace(color='g', linewidth=1, linestyle='-', marker='x')
             al1 = alphas[0]
@@ -454,7 +491,7 @@ class Arc2ArcDubins:
             utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
             utils.PlotLineSeg([arc1.cntr_x, arc1.cntr_y], [arc2.cntr_x, arc2.cntr_y], arrowfmt)      
             plt.axis('equal')
-            plt.show()
+            # plt.show()
         return
     
     def PlotAllPaths(self, candPathsList):
@@ -483,7 +520,7 @@ class Arc2ArcDubins:
             utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
             utils.PlotLineSeg([self.arc1.cntr_x, self.arc1.cntr_y], [self.arc2.cntr_x, self.arc2.cntr_y], arrowfmt)      
             plt.axis('equal')
-        plt.show()
+        # plt.show()
         return
     def A2AMinDubins(self):
         # Computes the list of candidate paths for minimum arc to arc dubins paths        
@@ -503,6 +540,14 @@ class Arc2ArcDubins:
             cp = CandidatePath('L',alphas[0], alphas[1], (segLength,0.))
             self.candPathsList.append(cp)
             self.lengthsVec.append(segLength)
+        
+        ## Path R
+        alphas, segLength = self.PathR_A2A()
+        if alphas[0]:
+            cp = CandidatePath('R',alphas[0], alphas[1], (segLength,0.))
+            self.candPathsList.append(cp)
+            self.lengthsVec.append(segLength) 
+            
         
         ######################## Local minima of the paths with one degree of freedom ########################
         
@@ -623,9 +668,10 @@ class Arc2ArcDubins:
             arc1_trans_ref = self.ReflectXaxis(arc1_trans)
             p2a_arc2bnd2arc1 = dubP2A.P2ArcDubins((arc1_trans_ref.cntr_x, arc1_trans_ref.cntr_y), arc1_trans_ref.arc_radius, (arc1_trans_ref.angPos_lb, arc1_trans_ref.angPos_ub),  self.rho)
             minPath_p2a, _ = p2a_arc2bnd2arc1.P2AMinDubins()  
-            cp1 = CandidatePath(minPath_p2a.pathType[::-1], -minPath_p2a.angPos+angPos_bnd+np.pi/2, angPos_bnd, minPath_p2a.segLengths[::-1])
-            self.candPathsList.append(cp1)
-            self.lengthsVec.append(sum(minPath_p2a.segLengths))
+            if minPath_p2a:
+                cp1 = CandidatePath(minPath_p2a.pathType[::-1], -minPath_p2a.angPos+angPos_bnd+np.pi/2, angPos_bnd, minPath_p2a.segLengths[::-1])
+                self.candPathsList.append(cp1)
+                self.lengthsVec.append(sum(minPath_p2a.segLengths))
         
         
         return
@@ -642,27 +688,32 @@ if __name__ == "__main__":
     
     # A2ADub = Arc2ArcDubins([0, 0], 2.5, [0.01, 6.28], [.6, 0.4], 2.7, [0.01, 6.28], 1) # for RLR
     
-
-    # alphas, segLengths = A2ADub.LocalMinRLR()
-    # alphas, segLengths = A2ADub.PathS_A2A()
-    # print('alphas: ', alphas)    
-    # print('segLengths: ', segLengths)
-    # A2ADub.PlotDubPath(alphas, segLengths, 'RLR')
-    # A2ADub.OneBoundaryPaths()
-    arc1 = Arc(1, 2, 2.6, 2.5, 6.28)
-    arc2 = Arc(-3.5, -3., 2.8, .5, 4.28)
+    arc1 = utils.Arc(0, 0, 2.6, 0.01, 3.28)
+    arc2 = utils.Arc(5., 4., 2.8, 3.4, 6.28)
 
     A2ADub = Arc2ArcDubins(arc1, arc2, 1) 
+
+    # alphas, segLengths = A2ADub.LocalMinRLR()
+    alphas, segLengths = A2ADub.PathL_A2A()
+    print('alphas: ', alphas)    
+    print('segLengths: ', segLengths)
+    if alphas[0]:
+        A2ADub.PlotA2APath(alphas, (segLengths,0), 'L')        
+    plt.show()
+    # A2ADub.OneBoundaryPaths()
+
     
-    minLength, minPath, candPathsList = A2ADub.A2AMinDubins()   
-    comp_time = timer()-tic
+    # minLength, minPath, candPathsList = A2ADub.A2AMinDubins()   
+    # comp_time = timer()-tic
     
-    print('minLength: ', minLength)  
-    print('comp_time: ', comp_time)  
+    # print('minLength: ', minLength)  
+    # print('comp_time: ', comp_time)  
     # if minPath:    
     #     A2ADub.PlotAllPaths(candPathsList)
     #     print('minPath: ', minPath)  
     #     A2ADub.PlotA2APath((minPath.angPos_arc1, minPath.angPos_arc2), minPath.segLengths, minPath.pathType)
+    
+    
     
     ############################# Test local min LS #############################
     

@@ -34,7 +34,8 @@ class P2ArcDubins:
         rho = self.rho
         
         dc1ct = np.sqrt( c_x*c_x + (c_y-rho)*(c_y-rho)  )
-        
+        if dc1ct<rho:
+            return None, None, (None, None, None)
         psi1 = np.arctan2(c_y-rho,c_x)
         psi2 = np.arcsin(rho/dc1ct )
 
@@ -62,6 +63,8 @@ class P2ArcDubins:
 
     def LocalMinLSR(self):
         
+        if self.arc.arc_radius <= 2*self.rho:
+            return None, None, (None, None, None)
         c_x = self.arc.cntr_x
         c_y = self.arc.cntr_y
         arcRad = self.arc.arc_radius     
@@ -99,10 +102,14 @@ class P2ArcDubins:
         arcRad = self.arc.arc_radius     
         rho = self.rho
         
-        Lc1ct = np.sqrt(c_x*c_x + (c_y+rho)*(c_y+rho))    
+        Lc1ct = np.sqrt(c_x*c_x + (c_y+rho)*(c_y+rho))  
+        if Lc1ct < rho:
+            return None, None, (None, None, None)
         phi2 = np.arccos(rho/(rho+arcRad))    
         psi1 = np.mod(np.arctan2(c_y+rho,c_x), 2*pi)
-        psi2 = np.arcsin(rho/np.sqrt( c_x*c_x + (c_y+rho)*(c_y+rho) ) )
+        # expr = rho/np.sqrt( c_x*c_x + (c_y+rho)*(c_y+rho) )        
+    
+        psi2 = np.arcsin(rho/Lc1ct )
         
         if Lc1ct>= arcRad+rho:
             phi1 = np.mod(-psi1+psi2, 2*pi)
@@ -123,6 +130,8 @@ class P2ArcDubins:
         return minAlpha, lengthRSL, segLengths
 
     def LocalMinRSR(self):
+        if self.arc.arc_radius <= 2*self.rho:
+            return None, None, (None, None, None)        
         c_x = self.arc.cntr_x
         c_y = self.arc.cntr_y
         arcRad = self.arc.arc_radius  
@@ -167,6 +176,8 @@ class P2ArcDubins:
         alMin = None
         segLengths = (None, None, None)
         for qe in qeRoots:
+            if qe<=0 or np.imag(qe) !=0:
+                continue
             l13 = np.sqrt(qe)
             if np.imag(l13)==0:
                 g = (l13*l13-l12*l12 + l23*l23 )/(2*l13)
@@ -535,14 +546,7 @@ class P2ArcDubins:
         if alpha is not None:
             cp = CandidateP2APath('LSL',alpha, seglengths)
             candPathsList.append(cp)
-            lengthsVec.append(pathLength)
-
-        ## Path local min LSR
-        alpha, pathLength, seglengths = self.LocalMinLSR()
-        if alpha is not None:
-            cp = CandidateP2APath('LSR',alpha, seglengths)
-            candPathsList.append(cp)
-            lengthsVec.append(pathLength)       
+            lengthsVec.append(pathLength)      
 
         ## Path local min RSL
         alpha, pathLength, seglengths = self.LocalMinRSL()
@@ -551,12 +555,20 @@ class P2ArcDubins:
             candPathsList.append(cp)
             lengthsVec.append(pathLength)  
 
-        ## Path local min RSR
-        alpha, pathLength, seglengths = self.LocalMinRSR()
-        if alpha is not None:
-            cp = CandidateP2APath('RSR',alpha, seglengths)
-            candPathsList.append(cp)
-            lengthsVec.append(pathLength)  
+        if self.arc.arc_radius>2*self.rho:
+            ## Path local min RSR
+            alpha, pathLength, seglengths = self.LocalMinRSR()
+            if alpha is not None:
+                cp = CandidateP2APath('RSR',alpha, seglengths)
+                candPathsList.append(cp)
+                lengthsVec.append(pathLength)  
+            
+            ## Path local min LSR
+            alpha, pathLength, seglengths = self.LocalMinLSR()
+            if alpha is not None:
+                cp = CandidateP2APath('LSR',alpha, seglengths)
+                candPathsList.append(cp)
+                lengthsVec.append(pathLength) 
 
         ## Path local min RLR
         alpha, pathLength, seglengths = self.LocalMinRLR()

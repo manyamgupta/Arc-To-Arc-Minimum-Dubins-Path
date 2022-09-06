@@ -9,6 +9,7 @@ import utils
 from types import SimpleNamespace
 from dataclasses import dataclass
 from timeit import default_timer as timer
+import copy
 
 # @dataclass
 # class Arc:
@@ -35,8 +36,8 @@ class Arc2ArcDubins:
         
         # self.arc1 = Arc(arc1_cntr[0], arc1_cntr[1], arc1_radius, arc1_bounds[0], arc1_bounds[1])
         # self.arc2 = Arc(arc2_cntr[0], arc2_cntr[1], arc2_radius, arc2_bounds[0], arc2_bounds[1])
-        self.arc1 = arc1
-        self.arc2 = arc2        
+        self.arc1 = copy.copy(arc1)
+        self.arc2 = copy.copy(arc2)
         self.MoveArc1ToOrig() #This moves the arc1 and arc2 such that center of arc1 is at origin, and the
         self.rho = rho #minimum turn radius of the vehicle
         
@@ -374,7 +375,7 @@ class Arc2ArcDubins:
             if np.imag(lamda)==0 and lamda > 0:   
                 
                 lamda_real = np.real(lamda)
-                if rho**2- lamda_real**2>0:
+                if rho**2- lamda_real**2>0 and np.abs(np.sqrt(rho**2-lamda_real**2)/(r1-rho))<1:
                     # al1 = np.pi - np.arcsin(np.sqrt(rho**2- lamda_real**2)/(r1-rho))
                     beta = 2*np.arcsin(lamda_real/rho)
                     gamma = np.arcsin(np.sqrt(rho**2-lamda_real**2)/(r1-rho))
@@ -403,8 +404,11 @@ class Arc2ArcDubins:
         # path with single right arc from arc1 to arc2
         # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
         
-        if self.len_c1c2 > self.arc1.arc_radius+self.arc2.arc_radius+2*self.rho - 2*self.rho or self.arc1.arc_radius>self.len_c1c2+self.arc2.arc_radius or self.arc2.arc_radius>self.len_c1c2+self.arc1.arc_radius:
+        if self.len_c1c2 > self.arc1.arc_radius+self.arc2.arc_radius+ - 2*self.rho or self.arc1.arc_radius>self.len_c1c2+self.arc2.arc_radius or self.arc2.arc_radius>self.len_c1c2+self.arc1.arc_radius:
             return (None, None), None
+        # expr = ((self.arc1.arc_radius - self.rho)**2 + self.len_c1c2**2 - ((self.arc2.arc_radius - self.rho)**2 ))/(2*self.len_c1c2*(self.arc1.arc_radius - self.rho))
+        # print([self.arc1.arc_radius, self.arc2.arc_radius, self.len_c1c2])
+        # print(f"{expr=}")
         al1a = self.psi_c1c2+ np.arccos( ((self.arc1.arc_radius - self.rho)**2 + self.len_c1c2**2 - ((self.arc2.arc_radius - self.rho)**2 ))/(2*self.len_c1c2*(self.arc1.arc_radius - self.rho)))        
         phia = 2*np.pi - np.arccos( ((self.arc1.arc_radius - self.rho)**2 - self.len_c1c2**2 + ((self.arc2.arc_radius - self.rho)**2 ))/(2*(self.arc2.arc_radius - self.rho)*(self.arc1.arc_radius - self.rho)))
         phia = np.mod(phia,2*np.pi)
@@ -430,7 +434,7 @@ class Arc2ArcDubins:
         # path with single Left arc from arc1 to arc2
         # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
         
-        if self.len_c1c2 > self.arc1.arc_radius+self.arc2.arc_radius+2*self.rho:
+        if self.len_c1c2 > self.arc1.arc_radius+self.arc2.arc_radius+2*self.rho or self.arc1.arc_radius>self.len_c1c2+self.arc2.arc_radius or self.arc2.arc_radius>self.len_c1c2+self.arc1.arc_radius:
             return (None, None), None
         al1 = self.psi_c1c2+ np.arccos( ((self.arc1.arc_radius+self.rho)**2 + self.len_c1c2**2 - ((self.arc2.arc_radius+self.rho)**2 ))/(2*self.len_c1c2*(self.arc1.arc_radius+self.rho)))
         
@@ -455,6 +459,8 @@ class Arc2ArcDubins:
         # path with one straight line
         # Assumption: center of arc1 is [0,0], tangents are clockwise on arcs
         
+        # expr = (self.arc2.arc_radius- self.arc1.arc_radius)/self.len_c1c2
+        # print(f"{expr=}")
         al1 = np.pi/2+self.psi_c1c2+ np.arcsin( (self.arc2.arc_radius- self.arc1.arc_radius)/self.len_c1c2 )
         len_S = np.sqrt(self.len_c1c2**2 -(self.arc2.arc_radius- self.arc1.arc_radius)**2 )
         if utils.InInt(self.arc1.angPos_lb, self.arc1.angPos_ub, al1) and utils.InInt(self.arc2.angPos_lb, self.arc2.angPos_ub, al1):
@@ -462,34 +468,34 @@ class Arc2ArcDubins:
         else:
             return (None, None), None
             
-    def PlotA2APath(self, alphas, segLengths, pathType, arc1=None, arc2=None, pathfmt=None):
+    def PlotA2APath(self, alphas, segLengths, pathType, arc_pos1=None, arc_pos2=None, pathfmt=None):
         # Plots a dubins path from arc1 to arc2
         # alphas are the start and end positions on the arcs are
         # seglengths are the length of each segment of the Dubins path
         # pathType is the dubins mode
         # is arc1 and arc2 are not given, the arcs from the main Arc2ArcDubins object are used
-        if arc1 is None:
-            arc1 = self.arc1
-            arc2 = self.arc2
+        if arc_pos1 is None:
+            arc_pos1 = self.arc1
+            arc_pos2 = self.arc2
         if pathfmt is None:
             pathfmt = SimpleNamespace(color='blue', linewidth=2, linestyle='-', marker='x')
-        if alphas[0]:            
-            arcfmt = SimpleNamespace(color='m', linewidth=1, linestyle='--', marker='x')
+        if alphas[0] is not None:            
+            arcfmt = SimpleNamespace(color='k', linewidth=.5, linestyle='--', marker='x')
             arrowfmt = SimpleNamespace(color='g', linewidth=1, linestyle='-', marker='x')
             al1 = alphas[0]
             al2 = alphas[1]    
-            iniPt = np.array([arc1.cntr_x+arc1.arc_radius*np.cos(al1), arc1.cntr_y+arc1.arc_radius*np.sin(al1)])
+            iniPt = np.array([arc_pos1.cntr_x+arc_pos1.arc_radius*np.cos(al1), arc_pos1.cntr_y+arc_pos1.arc_radius*np.sin(al1)])
             iniHdng = al1-np.pi/2
             iniConf_min = np.array([iniPt[0], iniPt[1], iniHdng])           
-            finPt = np.array([arc2.cntr_x+arc2.arc_radius*np.cos(al2), arc2.cntr_y+arc2.arc_radius*np.sin(al2)])
+            finPt = np.array([arc_pos2.cntr_x+arc_pos2.arc_radius*np.cos(al2), arc_pos2.cntr_y+arc_pos2.arc_radius*np.sin(al2)])
             finHdng = al2-np.pi/2     
             du.PlotDubPathSegments(iniConf_min, pathType, segLengths, self.rho, pathfmt)
             
-            utils.PlotArc(arc1, arcfmt)
-            utils.PlotArc(arc2, arcfmt)        
+            utils.PlotArc(arc_pos2, arcfmt)
+            utils.PlotArc(arc_pos2, arcfmt)        
             utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
             utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
-            utils.PlotLineSeg([arc1.cntr_x, arc1.cntr_y], [arc2.cntr_x, arc2.cntr_y], arrowfmt)      
+            # utils.PlotLineSeg([arc_pos1.cntr_x, arc_pos1.cntr_y], [arc_pos2.cntr_x, arc_pos2.cntr_y], arrowfmt)      
             plt.axis('equal')
             # plt.show()
         return

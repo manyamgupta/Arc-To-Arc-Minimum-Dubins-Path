@@ -179,6 +179,9 @@ def Angdiff(ti, tf ):
     
 def InInt(lb, ub, t ):   
     # Checks if t is in the interval (lb, ub), interval goes ccw from lb to ub
+    if t is None or np.isnan(t):
+        # print('invalid value for t: '+str(t))
+        return False
     lb = np.mod(lb, 2*pi)
     ub = np.mod(ub, 2*pi)
     t = np.mod(t, 2*pi) 

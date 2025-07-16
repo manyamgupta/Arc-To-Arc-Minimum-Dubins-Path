@@ -30,7 +30,7 @@ def PlotDubPathSegments(iniConf, pathMode, segLengths, rho, fmt=deffmt):
         for k in range(len(pathMode)):
             iniConf = PlotSegment(iniConf, segLengths[k], pathMode[k], rho, fmt)
             # print('iniConf: ',iniConf)
-            plt.scatter(iniConf[0], iniConf[1],marker='x')
+            # plt.scatter(iniConf[0], iniConf[1],marker='x')
 
     return
 

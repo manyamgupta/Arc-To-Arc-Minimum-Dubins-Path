@@ -491,13 +491,17 @@ class Arc2ArcDubins:
             finHdng = al2-np.pi/2     
             du.PlotDubPathSegments(iniConf_min, pathType, segLengths, self.rho, pathfmt)
             
-            utils.PlotArc(arc_pos2, arcfmt)
+            utils.PlotArc(arc_pos1, arcfmt)
             utils.PlotArc(arc_pos2, arcfmt)        
             utils.PlotArrow(iniPt, iniHdng, 1, arrowfmt)
             utils.PlotArrow(finPt, finHdng, 1, arrowfmt)  
             # utils.PlotLineSeg([arc_pos1.cntr_x, arc_pos1.cntr_y], [arc_pos2.cntr_x, arc_pos2.cntr_y], arrowfmt)      
             plt.axis('equal')
             # plt.show()
+            
+            # o1 = (arc_pos1.arc_radius+self.rho)*np.array([np.cos(alphas[0]), np.sin(alphas[0])])
+            # o2 = np.array([arc_pos2.cntr_x, arc_pos2.cntr_y])+(arc_pos2.arc_radius-self.rho)*np.array([np.cos(alphas[1]), np.sin(alphas[1])])
+            # plt.scatter([o1[0], o2[0]], [o1[1], o2[1]], marker='x')
         return
     
     def PlotAllPaths(self, candPathsList):
@@ -694,17 +698,17 @@ if __name__ == "__main__":
     
     # A2ADub = Arc2ArcDubins([0, 0], 2.5, [0.01, 6.28], [.6, 0.4], 2.7, [0.01, 6.28], 1) # for RLR
     
-    arc1 = utils.Arc(0, 0, 2.6, 0.01, 3.28)
-    arc2 = utils.Arc(5., 4., 2.8, 3.4, 6.28)
+    arc1 = utils.Arc(0, 0, 2.8, 0.01, 6.28)
+    arc2 = utils.Arc(6., 0., 2.1, 0.01, 6.28)
 
-    A2ADub = Arc2ArcDubins(arc1, arc2, 1) 
+    A2ADub = Arc2ArcDubins(arc1, arc2, rho) 
 
-    # alphas, segLengths = A2ADub.LocalMinRLR()
-    alphas, segLengths = A2ADub.PathL_A2A()
+    alphas, segLengths = A2ADub.LocalMinLR()
+    # alphas, segLengths = A2ADub.PathL_A2A()
     print('alphas: ', alphas)    
     print('segLengths: ', segLengths)
     if alphas[0]:
-        A2ADub.PlotA2APath(alphas, (segLengths,0), 'L')        
+        A2ADub.PlotA2APath(alphas, segLengths, 'LR')        
     plt.show()
     # A2ADub.OneBoundaryPaths()
 

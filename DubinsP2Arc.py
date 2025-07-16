@@ -670,7 +670,8 @@ if __name__ == "__main__":
     
     # P2ADub = P2ArcDubins([-2, .5], 2.5, [1.01, 5.2],  1)
     # P2ADub = P2ArcDubins([2.5, 3], 2.5, [.01, 6.2],  1) # for LRL/RLR local min
-    P2ADub = P2ArcDubins((-5.667745171280405, -4.631419374089865), 2.8, (4.080796326794896, 5.2), 1)
+    # P2ADub = P2ArcDubins((-5.667745171280405, -4.631419374089865), 2.8, (4.080796326794896, 5.2), 1)
+    P2ADub = P2ArcDubins((2,3), 1.5, (0,2*pi), 1)
     
     
     # minAlpha, length = P2ADub.RLRFeasLimits()
@@ -693,7 +694,8 @@ if __name__ == "__main__":
     minPath, candPathsList = P2ADub.P2AMinDubins()
     print('minPath: ', minPath)  
     if minPath:  
-        P2ADub.PlotAllPaths(candPathsList)
+        # P2ADub.PlotAllPaths(candPathsList)
+        P2ADub.PlotAllPaths([minPath])
     
 
 

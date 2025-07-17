@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from types import SimpleNamespace
 # from collections import namedtuple
-
+import matplotlib.pyplot as plt
 defaultFmt = SimpleNamespace(color='blue', linewidth=2, linestyle='-', marker='x')
 from dataclasses import dataclass
 
@@ -18,6 +18,13 @@ class Arc:
     # arc goes from lb to ub in ccw direction
     angPos_lb: float # angular position lower bound
     angPos_ub: float # angular position upper bound
+
+@dataclass
+class Circle:
+    cntr_x: float
+    cntr_y: float
+    circle_radius: float
+
 
 def DubPathReflection(pathMode):
     pathRef = ''
@@ -146,6 +153,10 @@ def AngularLinSpace(t_l, t_u, nd):
     else:
         return np.linspace(t_l,t_u, nd)
     
+def get_cmap(n, name='hsv'):
+    '''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
+    RGB color; the keyword argument name must be a standard mpl colormap name.'''
+    return plt.cm.get_cmap(name, n)
 
 def PlotArc(arc,fmt):
 
@@ -157,8 +168,11 @@ def PlotArc(arc,fmt):
 
     tc_x = arc.cntr_x+r*cos(alVec)
     tc_y = arc.cntr_y+r*sin(alVec)
-    plt.scatter(arc.cntr_x, arc.cntr_y, marker='x', color=fmt.color)
-    plt.plot(tc_x, tc_y, fmt.color, linewidth=fmt.linewidth, linestyle=fmt.linestyle) 
+    plt.scatter(arc.cntr_x, arc.cntr_y, marker='x', color='k')
+    plt.plot(tc_x, tc_y, color=fmt.color, linewidth=fmt.linewidth, linestyle=fmt.linestyle) 
+    plt.plot(np.array([arc.cntr_x, arc.cntr_x+r*cos(theta_l)]), np.array([arc.cntr_y, arc.cntr_y+r*sin(theta_l)]), color=[.2,.2,.2], linewidth=.2) 
+    plt.plot(np.array([arc.cntr_x, arc.cntr_x+r*cos(theta_u)]), np.array([arc.cntr_y, arc.cntr_y+r*sin(theta_u)]), color=[.2,.2,.2], linewidth=.2) 
+    
     return
 
 def Angdiff(ti, tf ):
@@ -253,7 +267,19 @@ def PlotCircle(C, r,fmt):
     tc_x = C[0]+r*cos(alVec)
     tc_y = C[1]+r*sin(alVec)
     plt.plot(tc_x, tc_y, color=fmt.color, linewidth=fmt.linewidth, linestyle=fmt.linestyle,zorder=0) 
-    plt.scatter(C[0], C[1],marker='x')
+    plt.scatter(C[0], C[1],marker='x', facecolor= fmt.color)
+
+    return
+
+def PlotCircle2(circ,fmt):
+    alVec = np.linspace(0,2*pi,1000)
+    C_x = circ.cntr_x
+    C_y = circ.cntr_y
+    radius = circ.circle_radius
+    tc_x = C_x+radius*cos(alVec)
+    tc_y = C_y+radius*sin(alVec)
+    plt.plot(tc_x, tc_y, color=fmt.color, linewidth=fmt.linewidth, linestyle=fmt.linestyle,zorder=0) 
+    plt.scatter(C_x, C_y,marker='x', facecolor= fmt.color)
 
     return
 
@@ -273,9 +299,9 @@ def PlotArrow(p1, hdng, arrLen, fmt):
     # p2 = p1 + arrLen*np.array([cos(hdng), sin(hdng)])
     dx = arrLen*np.cos(hdng)
     dy = arrLen*np.sin(hdng)
-
+    head_width_rel = arrLen*0.1
     # plt.plot([p1[0],p2[0]], [p1[1],p2[1]], color=fmt.color, linewidth=fmt.linewidth, linestyle=fmt.linestyle)     
-    plt.arrow(p1[0],p1[1],dx,dy,head_width=.1*np.sqrt(dx**2+dy**2),color=fmt.color,linewidth=fmt.linewidth, linestyle=fmt.linestyle)
+    plt.arrow(p1[0],p1[1],.5*dx, .5*dy, head_width=head_width_rel,color=fmt.color,linewidth=fmt.linewidth, linestyle=fmt.linestyle)
     return
 
 def PlotLineSeg(p1, p2, fmt=defaultFmt):

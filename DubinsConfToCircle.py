@@ -1354,8 +1354,6 @@ if __name__ == "__main__":
     #     P2CDub.PlotDubPath2(alpha_star, 'LRL')
 
     ######################## example computes minmum Dubins path to circle ################
-
-    
     
     minPath, candPathsList = P2CDub.P2CMinDubins()
     print('minPath: ', minPath)  

@@ -20,6 +20,7 @@ import copy
 #     angPos_lb: float # angular position lower bound
 #     angPos_ub: float # angular position upper bound
 
+
 @dataclass
 class CandidatePath:
     pathType: str 

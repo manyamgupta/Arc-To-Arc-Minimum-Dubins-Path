@@ -14,3 +14,5 @@ To compute shortest Dubins path to circle, use the script in "DubinsConfToCircle
 For complete analysis, please refer to this paper 
 
 S. G. Manyam, and D. W. Casbeer. "On Shortest Arc-To-Arc Dubins Path," IEEE International Conference on Robotics and Automation (ICRA), pp. 10226-10232. IEEE, 2023.
+
+Distribution Statement A: Approved for Public Release; Distribution is Unlimited. PA# AFRL-2022-4455

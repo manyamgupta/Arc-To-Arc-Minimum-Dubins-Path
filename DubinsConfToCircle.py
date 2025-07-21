@@ -1,3 +1,12 @@
+####################################################################################################################
+# This script computes the shortest Dubins path starting from a given initial configuration (position and heading) 
+# and ends on a  circle, with final heading being a clockwise tangent to the circle.
+# This is a special case of the Shortest Arc to Arc Dubins path where the initla arc degenrates to a point, and the final arc is a complete circle
+# Written by: 
+# Satyanarayana Gupta Manyam
+# Research Scientist, DCS Corporation, Dayton, OH
+# Collaborators: UAV Cooperative and Intelligent Control Team, AFRL RQQA
+
 from cmath import isfinite
 import numpy as np
 from numpy import pi,cos,sin
